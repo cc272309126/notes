@@ -1,0 +1,287 @@
+
+commands
+
+git diff
+
+git diff [--options] [--] [<path>…]
+git diff [--options] --cached [<commit>] [--] [<path>…]
+
+
+git diff [--options] <commit> <commit> [--] [<path>…]
+This is to view the changes between two arbitrary <commit>.
+
+git diff [--options] <commit>..<commit> [--] [<path>…]
+This is synonymous to the previous form. If <commit> on one side is omitted, it will have the same effect as using HEAD instead.
+
+git diff [--options] <commit>...<commit> [--] [<path>…]
+This form is to view the changes on the branch containing and up to the second <commit>, starting at a common ancestor of both <commit>. "git diff A...B" is equivalent to "git diff $(git-merge-base A B) B". You can omit any one of <commit>, which has the same effect as using HEAD instead.
+
+
+OPTIONS
+--stat[=<width>[,<name-width>[,<count>]]]
+--numstat
+--shortstat
+--name-only
+--name-status
+
+git diff  
+-a, --text
+--ignore-space-at-eol
+-b, --ignore-space-change
+-w, --ignore-all-space
+--ignore-blank-lines
+
+
+How to retrieve a single file from specific revision in Git?
+git show $REV:$FILE
+git show somebranch:from/the/root/myfile.txt
+git show HEAD^^^:test/test.py
+git checkout 08618129e66127921fbfcbc205a06153c92622fe -- [full/path]
+git show <treeish>:<file>
+
+git config
+
+git config --global user.name [username]
+git config --global user.email [email]
+git config --global color.ui true
+ 
+/etc/gitconfig 
+[alias]
+	st = status
+	ci = commit
+	co = checkout
+	br = branch
+	colorlog = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold green)<%an>%Creset' --abbrev-commit
+	lg = log -30 --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold green)<%an>%Creset' --abbrev-commit
+	lg1 = log --graph --abbrev-commit --decorate --date=relative --format=format:'%C(bold magenta)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
+	lg8 = log --graph --abbrev-commit --decorate --date=relative --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
+	
+[core]
+	editor = vim
+
+
+git checkout
+
+git checkout -b local-branchname origin/remote_branchname
+ 
+  -b <new_branch> Create a new branch named <new_branch> and start it at <start_point>; 
+  --detach  Rather than checking out a branch to work on it, check out a commit for inspection and discardable experiments. This is the default behavior of "git checkout <commit>" when <commit> is not a branch name. See the "DETACHED HEAD" section below for details.
+
+detached --> git checkout
+detached HEAD state. It means simply that HEAD refers to a specific commit, as opposed to referring to a named branch.
+
+
+git log
+
+查看提交记录
+git log filename
+
+查看详细历史
+git log -p filename
+
+git log --follow --name-status -- filename
+git log --follow --shorstat -- filename
+git log --follow --stat -- filename
+git log --follow --numstat -- filename
+
+git log --oneline branch_name -- filename
+
+search from the log
+git log --grep="pattern"
+
+Shorthand to view diff of previous version of file
+git log -1 -p SHA1 
+git log -1 --name-status SHA1 
+
+
+git rev-list
+git rev-list  ==  git log, list SHA1 ID
+git rev-list -- Lists commit objects in reverse chronological order
+git log -- Lists commit objects in relative order
+
+
+git commit --amend
+
+git merge
+git merge-base
+git rebase
+
+fast-forward merge
+git merge --no-ff
+git merge --ff-only
+
+
+git rebase foo = sequence git merge foo 
+master = a + b
+foo = a + c
+git rebase foo = a + c + b
+
+git rebase process
+current HEAD  == commit ID A
+git rebase -i commit ID B
+procedure:
+1: find common ancestor of ID-A and ID-B, ID-C
+2: get difference commits from ID-C --> ID-A
+3: git jump to the commit ID-B
+4: apply difference on the top of commit ID-B
+
+special case:
+commit ID-B == commit ID-C
+serialise the branch
+
+git pull == 
+# assume current checked out branch is "foo"
+git fetch origin
+git merge origin/foo
+
+git pull --rebase == 
+git fetch origin
+git rebase origin/foo
+
+
+git blame
+
+git am
+git apply patch
+
+git stash
+
+
+git push
+
+git push [远程名] [本地分支]:[远程分支] 
+The simplest way to set up the association between your bucket-4 and bucket-4 in origin is to make sure that the next time you push, you do:
+git push -u origin bucket-4
+git push origin branchxxx --> create remote branch 
+git push -u origin branchxxx --> create and track remote branch
+git push origin :serverfix --> delete remote branch serverfix
+
+Alternatively, you can do:
+git branch --set-upstream bucket-4 origin/bucket-4
+
+
+git remote
+git remote rename pb paul
+git remote rm paul
+git remote rm github
+
+git cherry-pick
+
+git reflog
+
+
+git update-index --assume-unchanged / git update-index --no-assume-unchanged
+I spent hours trying to solve a similar issue - a remote branch that I had checked out, which stubbornly showed four files as 'Changed but not updated', even when deleting all files and running git checkout -f again (or other variations from this post)!
+These four files were necessary, but certainly hadn't been modified by me. My final solution - persuade Git that they had not been changed. The following works for all checked out files, showing 'modified' status - make sure you have already committed/stashed any that have really been modified!:
+git ls-files -m | xargs -i git update-index --assume-unchanged "{}"
+I've added this as a placeholder for myself for next time, but I hope it helps someone else too.
+git update-index --no-assume-unchanged p1.txt
+
+The Git Index == git file
+The index is a binary file (generally kept in .git/index) containing a sorted list of path names, each with permissions and the SHA1 of a blob object; git ls-files can show you the contents of the index:
+$ git ls-files --stage
+git update-index --> git add/git rm/git mv
+git read-tree	---+
+				   |
+git write-tree  ---+ == git commit
+				   |	
+git commit-tree ---+
+
+conception
+index	checkout-index  merge-index update-index diff-index index-pack show-index
+tree read-tree write-tree diff-tree ls-tree 
+file  cat-file diff-files git-unpack-file ls-files
+ref 
+
+信息模型的扩散
+刚才我在第一点提到的 Git 的信息模型是非常复杂的，而且还一直在扩散，当然一直在使用 Git ，就会不断的冒出各种新的概念，例如 refs, tags, the reflog, fast-forward commits, detached head state (!), remote branches, tracking, namespaces 之类的。
+
+sha1 value --map to--> name string 
+the name string is a reference which stored in .git/refs
+including heads  remotes  tags
+
+git log shows the commit log accessible from the refs (heads, tags, remotes)
+git reflog is a record of all commits that are or were referenced in your repo at any time.
+log == HEAD log 
+reflog  == reference log 
+
+recover remote deleted branch 
+git fsck --full --no-reflogs --unreachable --lost-found 
+
+
+git checkout-index filename == git checkout filename
+
+
+git bisect start
+git bisect good
+git bisect bad
+git bisect reset
+git bisect log >> 11.log
+git bisect replay 11.log
+
+link file
+git rm linkfile
+git commit
+ln -s link linkname
+git add 
+git commit
+
+
+squash
+git reset --hard HEAD~12
+git merge --squash HEAD@{1}
+git commit
+
+git reset --soft HEAD~3 
+git commit
+
+git archive -o ../updated.zip HEAD $(git diff --name-only HEAD^)
+git archive -o ../latest.zip NEW_COMMIT_ID_HERE $(git diff --name-only OLD_COMMIT_ID_HERE NEW_COMMIT_ID_HERE) 
+
+
+Clone a specific remote branch
+git init
+git remote add -t BRANCH_NAME_HERE -f origin REMOTE_REPO_URL_PATH_HERE
+git checkout BRANCH_NAME_HERE
+
+Start a new Branch with No History
+git checkout --orphan NEW_BRANCH_NAME_HERE
+
+Checkout File from Other Branch without Switching Branches
+git checkout BRANCH_NAME_HERE -- PATH_TO_FILE_IN_BRANCH_HERE
+
+Ignore Changes in a Tracked File
+git update-index --assume-unchanged PATH_TO_FILE_HERE
+
+
+Try using git ls-files --other - it should list all files that git doesn't know about; i.e. those files that aren't in the repository and aren't ignored by .gitignore
+git status --ignored
+git ls-files --others -i --exclude-from=.git/info/exclude
+git ls-files --others -i --exclude-standard
+git clean -ndX is a simpler solution
+
+
+不冲突的git pull
+It is perfect if you know (or hope) you won’t get any conflict
+$ git stash --include-untracked
+$ git pull --rebase origin master
+$ git stash pop
+# fix conflict (merge) if needed
+
+冲突的git pull
+$ git add --all
+$ git commit -m '[STASH]'
+$ git pull --rebase origin master
+# fix conflict (rebase) if needed
+$ git reset HEAD~1
+
+strace -e 'trace=file' git status
+
+How to create a remote Git repository from a local one
+git remote add origin git@127.0.0.1:sandboxa.git
+git push origin master
+
+git init --bare --shared abc.git
+git clone  reposadmin@192.168.0.190:/home/reposadmin/abc.git
+
+
