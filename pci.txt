@@ -65,7 +65,7 @@ pciDevPopulate
 
 PCI manager的功能
 pciMgrsInit
-	cpu == 0 && WRHV_ARCH_HAS_DEFAULT_PCI_CONTROLLER 
+	cpu == 0 && ARCH_HAS_DEFAULT_PCI_CONTROLLER 
 	pciMgrsInitAll
 		threadCreate -- pciMgr 
 			SYS_PCI_REQUEST_READ_DATA	1   /* 读data */
