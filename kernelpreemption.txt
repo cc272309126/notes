@@ -1,0 +1,64 @@
+
+kernel run path
+
+路径
+hardirq
+softirq/tasklet
+exception
+system call
+page fault
+kernel thread
+int3 trap debug
+
+约束
+hardirq before ack, cli
+hardirq + softirq , mask same irq
+hardirq + softirq, not preempt 
+hardirq, not preempt by softirq/system call
+
+
+
+kernel run path	
+
+1: user program error == exception(dpl=0, sti) -- 20
+2: system call  == exception (dpl=3, sti)  -- 300 
+3: page fault == exception(dpl=0, sti) -- 1
+4: int3 trace/debug == interrupt(dpl=3, cli) -- 3  	
+5: device interrupt == interupt(dpl=0, cli) -- 200
+
+
+nesting
+
+exception --> interrupt/int3
+exception -x-> systemcall/pagefault/exception
+
+systemcall --> interrupt/int3/page fault 
+systemcall -x-> exception/system call
+
+page fault --> interrupt/int3
+page fault -x-> exception/system call/page fault
+
+interrupt --> interrupt/int3
+interrupt -x-> exception/system call/page fault
+
+preempt
+0|nmi|hardirq|softirq|preemptcount
+
+do not preempt
+1: hardirq
+2: softirq
+3: preemptcount != 0, spinlock/rwspinlock/seqlock/scheduler/percpu
+
+do preempt
+preempt == 0  		can/cannot
+need_resched == 1	need/neednot
+
+when set need_resched, in hardirq
+
+when check preempt_count
+1: exit from hardirq
+2: exit from softirq
+3: preemptcount change as 0
+	exit from spinlock/rwspinlock/seqlock
+	exit from scheduler
+	exit from percpu
