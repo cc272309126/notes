@@ -1,0 +1,187 @@
+CFS详解
+linux 3.14
+
+summary
+
+1: 进入队列之前，如果计算vruntime
+普通切换: 
+enqueue_entity
+	se->vruntime += cfs_rq->min_vruntime;
+dequeue_entity
+	se->vruntime -= cfs_rq->min_vruntime;
+
+wake up:
+place_entity(0)
+	vruntime = max(self, (cfs_rq->min_vruntime - 3ms)) 
+	if sleep for a long time, then compensate, if sleep a few time(< 3ms), then do not compensate		
+
+create from do_fork():
+place_entity(1)
+	delta = virtual(ideal_runtime)
+	// 1: child = max(father, cfs_rq->min_vruntime + delta) 
+	// 2: max than father, sawp(father, child) 
+	place_entity(1) --> min(max(father, ( cfs_rq->min_vruntime + delta)), father) 	
+
+2: 如何入队 --> vruntime of rb tree
+
+3:进入队列以后，何时被切换出去
+
+优先级抢占
+时间片到期 --  period / ideal_runtime / check_preempt_tick
+何时检查到期 -- tick到来 check_preempt_tick
+	
+4: 如何选择next --> leftmost
+
+1.1：如果更新curr的real_runtime, vruntime 
+update_curr
+	u64 now = rq_clock_task(rq_of(cfs_rq));
+	delta_exec = now - curr->exec_start;
+	curr->exec_start = now;     /* start */
+	curr->sum_exec_runtime += delta_exec;       /* real time */
+	curr->vruntime += calc_delta_fair(delta_exec, curr);    /*  virtual time */
+	update_min_vruntime(cfs_rq);
+	
+1.2: 如何更新rq的min_vruntime	
+update_min_vruntime
+	u64 vruntime = cfs_rq->min_vruntime;    /* 1. no curr, no leftmost,  from rq */
+	vruntime = cfs_rq->curr->vruntime;      /* 2. no leftmost,  from curr */
+	vruntime = se->vruntime;        		/* 3. no curr, from leftmost */
+	vruntime = min_vruntime(vruntime, se->vruntime);    /* 4. min of  curr and leftmost   */
+	/* ensure we never gain time by being placed backwards. */
+	/* 5.  in case of 2, 3, 4, if the vruntime is little than 1, do not change vruntime */
+	cfs_rq->min_vruntime = max_vruntime(cfs_rq->min_vruntime, vruntime);    
+
+
+context and code
+
+1: 
+u64 vruntime;  u64 x ms == 3亿年。参见struct sched_entity
+
+2: 
+thread has a weight
+
+real_runtime正比于weight。
+vruntime则是完全公平的。rb tree的计算是基于vruntime的。参见__enqueue_entity。
+
+thread t1 t2 ... tn
+weight w1 w2 ... wn
+runqueue load = w1 + w2 + ... + wn
+
+period >= 0.75ms(sysctl_sched_min_granularity) x n 		// ?
+period = 4ms x n // 体现在哪段代码 ?
+
+vruntime of every thread  = 4ms
+
+real_runtime of every thread = 4ms x weight, 
+在实际实现中，weight越大，vruntime走的越慢。
+比如weight=2，走了1ms, 计作vruntime走了1ms/2 = 0.5ms，
+从而实现vruntime走了4ms, real_runtime走了8ms的效果。
+
+ 
+3: 何时更新rq的clock, clock_task，用于计算rq->now, 参见update_curr
+tick到来时候，或者task与runqueue交互,进入，删除，迁移，退出，创建等
+
+hrtick
+scheduler_tick
+enqueue_task
+dequeue_task
+task_fork_fair	-- fork()
+put_prev_task
+migrate_tasks
+yield_task_fair
+...
+	update_rq_clock
+		rq->clock_task += delta;
+
+4: update_curr //  Update the current task's runtime statistics.
+
+update_curr, 更新当前调度进程的start, real_runtime, vruntime
+	u64 now = rq_clock_task(rq_of(cfs_rq));
+	delta_exec = now - curr->exec_start;
+	curr->exec_start = now;     /* start */
+	curr->sum_exec_runtime += delta_exec;       /* real time */
+	curr->vruntime += calc_delta_fair(delta_exec, curr);    /*  virtual time */
+
+
+5:何时选择下一个进程调度 // 体现在函数check_preempt_tick
+
+ideal_runtime = 4ms x weight
+
+every process do not run a time longer than ideal_runtime
+curr只要没有超过ideal_runtime, 只要没人抢占, curr->vruntime就算很大了，也可能在执行。并不是每次只要
+curr->vruntime > leftmost->vruntime, 就立马切换到leftmost
+
+tick到来，中断到来，如果curr->vruntime没有大于ideal_vruntime, 并不会触发context切换。
+
+如何标记是一个period 
+the time every thread wait in run queue would not longer than period
+如何实现的呢，如果没人抢占curr, curr最多运行ideal_runtime时间。然后切换到其它进程。这样必然导致
+它排在rb tree最后。这属于自己放弃。yield。   // 体现在函数check_preempt_tick
+
+schedule
+preempt_schedule
+preempt_schedule_irq
+	__schedule
+		pick_next_task
+		context_switch
+		
+hrtick --> task_tick(1)
+scheduler_tick --> task_tick(0)
+
+task_tick_fair
+	entity_tick
+		update_curr
+		check_preempt_tick
+			ideal_runtime		
+			
+6: 进入run queue
+
+如果是wakeup，或者进程切换进队列(不是fork)
+enqueue_entity
+	place_entity(0)
+	__enqueue_entity
+		
+
+如果是fork进队列		
+do_fork
+	copy_process
+		sched_fork
+			task_fork_fair
+				place_entity(1)
+
+task_fork_fair
+	se->vruntime = curr->vruntime (otherwise = 0)
+	place_entity(1)
+		se->vruntime = max_vruntime(se->vruntime, vruntime); 
+	swap(curr, se)  == swap(father, child)
+	se->vruntime -= cfs_rq->min_vruntime;	
+
+
+7: 进入队列之前，如果计算vruntime
+
+before __enqueue_entity
+how to get se->vruntime
+
+A: not wake up, 纯粹进程切换，要么是优先级切换，要么是时间片用尽。
+	se->vruntime += cfs_rq->min_vruntime; 
+B: wake up	//  if sleep for a long time, then compensate, if sleep a few time(< 3ms), then do not compensate
+	place_entity(0) --> max(self, (cfs_rq->min_vruntime - 3ms))
+C: init from fork() // 1: child = max(father, cfs_rq->min_vruntime + delta) // 2: max than father, sawp(father, child) 
+	place_entity(1) --> min(max(father, ( cfs_rq->min_vruntime + delta)), father) 
+	
+
+8:
+ a) 每个进程每次获得CPU使用权最多可以执行与它对应的ideal_runtime那么长的时间。
+ b) 如果每个进程每次获得CPU使用权时它都执行了它对应的ideal_runtime那么长的时间，整个就绪队列的顺序保持不变。
+ c) 如果某个进程某几次获得CPU使用权时运行的时间小于它ideal_time指定的时间（即它被调度时没有享用完它可以享用的最大
+时间），按照vruntime进行排序的机制会使得它尽量排在队列的前面，让它尽快把没有享用完的CPU时间弥补起来。
+
+period抽象模型基本上就是对内核cfs调度机制的一个抽象（没有考虑睡眠，抢占等细节）：
+a) 每个进程有一个权重值(weight),值越大，表示该进程越优先。
+b) 每个进程还对应一个vruntime(虚拟时间)，它是根据进程实际运行的时间runtime计算出来的。vruntime值不能反映进程执行的真
+实时间，只是用来作为系统判断接下来应该选择哪个进程使用CPU的依据————调度器总是选择vruntime值最小的进程执行。
+c) vruntime行走的速度和进程的weight成反比。
+d) 为了保证在某段时间(period)内每个进程至少能执行一次，操作系统引入了ideal_runtime的概念，规定每次获得CPU使用权时，执
+行时间不能超过它对应的ideal_runtime值。达到该值就会激活调度器，让调度器再选择一个vruntime值最小的进程执行。
+e) 每个进程的ideal_runtime长度与它的weight成正比
+		

@@ -1,0 +1,104 @@
+
+PCI 的初始化
+archBootCoreInit
+	pciBusScan
+		Device ID | Vendor ID != 0xffffffff
+		pciDevScan
+			pciDevPopulate (scan the specified PCI device , read all the information of the single pci device )
+		pciIrqRouteSet
+		pciDevIrqSet
+
+PCI单个function的配置读取
+pciDevPopulate
+	pciHeaderGet = 64 * pciRead
+	pciBarGet
+		pciGetBarConfig
+			bar的奇葩读取规定
+			1: read old config in bar
+			2: write ffffffff
+			3: read new config again 
+			4: write old config 
+			5: if new config != 0xffffffff and new config != 0 /* BAR is implemented */ 
+			6: if ((x) & 0x00000001) == 0 --> MEM
+					x & ( ~0xf)
+			   else
+					x & (~0x3)		--> IO
+				
+				#define BAR_SPACE(x)    ((x) & 0x00000001)
+				#define BAR_SPACE_MEM   0
+				#define BAR_SPACE_IO    1
+
+				#define BAR_TYPE(x)     (((x) >> 1) & 0x00000003)
+				#define BAR_TYPE_32BIT  0
+				#define BAR_TYPE_20BIT  1
+				#define BAR_TYPE_64BIT  2
+
+				#define BAR_MEM_PREFETCH(x)     (((x) >> 3) & 0x00000001)
+				#define BAR_MEM_PREFETCH_YES	1
+				#define BAR_MEM_PREFETCH_NO	0
+
+				#define BAR_ADDR_SPACE_IO_MASK	~3
+				#define BAR_ADDR_SPACE_MEM_MASK	~0xf
+
+				bar_base是config & mask得到
+				bar_size是计算出来的，不是读取出来的。
+				64位占用了2个bar寄存器
+				bar_config包括64位，IO/MEM, prefetch, 20bitLowMem
+				typedef struct sysinfo_bar_config
+				{
+					uint32_t		is_mem: 1;	/* TRUE if memory mapped	*/
+					uint32_t		is_lowmem: 1;	/* TRUE if 20-bits (below 1M)	*/
+					uint32_t		is_quad: 1;	/* TRUE if 64-bits		*/
+					uint32_t		prefetchable: 1;	/* TRUE if prefetchable		*/
+					uint32_t		padding: 28;
+				} SYSINFO_BAR_CONFIG;
+				
+	status & PCI_STATUS_CAPABILITY_LIST
+		 Capability Ptr
+			PCI_CAP_MSI
+			PCI_CAP_MSIX
+			PCI_CAP_PCI_EXPRESS
+			
+		
+		PCIE &　PCIE_EXT_CAP_ID_SRIOV
+			
+
+PCI manager的功能
+pciMgrsInit
+	cpu == 0 && WRHV_ARCH_HAS_DEFAULT_PCI_CONTROLLER 
+	pciMgrsInitAll
+		threadCreate -- pciMgr 
+			SYS_PCI_REQUEST_READ_DATA	1   /* 读data */
+			SYS_PCI_REQUEST_WRITE_DATA	2   /* 写data */
+			SYS_PCI_REQUEST_READ_ADDR	3   /* 读address, 不可能发生 */
+			SYS_PCI_REQUEST_WRITE_ADDR	4   /* 写address, 包含在1,2, 不可能单独发生 */
+
+PCI port写入地址			
+address write
+bspPciCtrlAddrWrite
+	bspPciCtrlWrite(pciCtrlAddrReg[0xCF8] )
+		sysOutLong/sysOutWord/sysOutByte
+			movl	SP_ARG1(%esp),%edx	--> address reigster 
+			movl	SP_ARG2(%esp),%eax	--> address value
+			outl	%eax,%dx			--> address value To address reigster 
+
+PCI port读取data
+bspPciCtrlDataRead
+	bspPciCtrlRead(pciCtrlDataReg[0xCFC] )
+		sysInLong/sysInWord/sysInByte
+			movl	SP_ARG1(%esp),%edx	--> data register 
+			movl	$0,%eax				--> init eax
+			inl		%dx,%eax			--> data value add To eax
+
+PCI port写入data			
+bspPciCtrlDataWrite
+	bspPciCtrlWrite (pciCtrlDataReg[0xCFC] )
+
+PCI 寄存器读写
+pciRead = 	bspPciCtrlAddrWrite + bspPciCtrlDataRead		
+pciWrite = 	bspPciCtrlAddrWrite + bspPciCtrlDataWrite
+
+PCI config space读写	
+pciHeaderGet = 64 * pciRead
+pciHeaderPut = 64 * pciWrite
+
