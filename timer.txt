@@ -1,0 +1,123 @@
+#define LOCAL_TIMER_VECTOR      0xef
+alloc_intr_gate(LOCAL_TIMER_VECTOR, apic_timer_interrupt);
+apic_timer_interrupt smp_apic_timer_interrupt
+    local_apic_timer_interrupt
+        evt->event_handler(evt);
+
+tick_set_periodic_handler
+
+
+x86_init
+    .setup_percpu_clockev   = setup_boot_APIC_clock
+        setup_APIC_timer
+            clockevents_register_device
+                tick_check_new_device
+                    tick_setup_device
+                        tick_setup_periodic / tick_setup_oneshot
+                            tick_set_periodic_handler
+                                dev->event_handler = tick_handle_periodic;
+                                    tick_periodic
+                                    
+                                    
+hpet
+    tick_handle_oneshot_broadcast
+    
+lapic
+    hrtimer_interrupt
+
+apic_timer_interrupt
+
+
+clock source
+x86_init
+    .timers | .timer_init       = hpet_time_init
+        hpet_enable
+            hpet_clocksource_register
+                clocksource_register_hz
+                    __clocksource_register_scale
+                        clocksource_enqueue
+                        clocksource_enqueue_watchdog
+                        clocksource_select
+                        
+x86_late_time_init
+    hpet_time_init
+    tsc_init                
+        .tsc_pre_init       = x86_init_noop
+
+        
+device_initcall(init_tsc_clocksource);
+    clocksource_register_khz
+        __clocksource_register_scale
+        
+jiffies is also a clock source
+
+core_initcall(init_jiffies_clocksource);
+    clocksource_register(&clocksource_jiffies);
+
+fs_initcall(init_acpi_pm_clocksource);
+    clocksource_register_hz(&clocksource_acpi_pm, PMTMR_TICKS_PER_SEC);
+
+fs_initcall(clocksource_done_booting);
+    
+clocksource_select
+    __clocksource_select
+        timekeeping_notify
+            change_clocksource
+
+
+start_kernel()
+  -> if (late_time_init)
+           late_time_init()
+           x86_late_time_init()
+             -> hpet_time_init()
+                  -> hpet_enable()
+                       -> hpet_legacy_clockevent_register() / hpet_clocksource_register
+
+clockevents_config_and_register(&hpet_clockevent, hpet_freq, HPET_MIN_PROG_DELTA, 0x7FFFFFFF);
+clockevents_config_and_register(lapic_clockevent, (tsc_khz / TSC_DIVISOR) * 1000, 0xF, ~0UL);
+
+clockevents_config_and_register
+    clockevents_register_device
+        tick_check_new_device
+            tick_setup_device
+                tick_setup_periodic
+                    dev->event_handler = tick_handle_periodic;
+                tick_setup_oneshot
+                    
+kernel_init()
+  -> smp_prepare_cpus(setup_max_cpus)
+     native_smp_prepare_cpus(64)
+       -> x86_init.timers.setup_percpu_clockev()
+          setup_boot_APIC_clock()
+            -> setup_APIC_timer()
+                 -> clockevents_register_device(levt)
+                 
+
+Clock Event Device: hpet
+ event_handler:  tick_handle_oneshot_broadcast
+Clock Event Device: lapic
+ event_handler:  hrtimer_interrupt
+
+tick_handle_periodic
+tick_handle_periodic_broadcast
+tick_handle_periodic
+    tick_periodic
+        update_process_times
+            run_local_timers
+                raise_softirq(TIMER_SOFTIRQ);
+
+init_timers
+    run_timer_softirq
+        hrtimer_run_pending
+            hrtimer_switch_to_hres
+                tick_init_highres
+                    tick_switch_to_oneshot(hrtimer_interrupt)
+                        
+irq0 / .handler = timer_interrupt
+    global_clock_event->event_handler
+    tick_handle_oneshot_broadcast / tick_setup_periodic
+        
+tick_periodic
+    do_timer
+    update_wall_time
+    update_process_times
