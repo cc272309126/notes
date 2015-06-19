@@ -14,6 +14,19 @@ wake up:
 place_entity(0)
 	vruntime = max(self, (cfs_rq->min_vruntime - 3ms)) 
 	if sleep for a long time, then compensate, if sleep a few time(< 3ms), then do not compensate		
+    a sleeper,means it has sleeps for a long time,and wakeup it now,put it in the queue. 
+    so, we give out a Thresh latency,which can make the sleeps wakeup sooner. 
+    There are below 3 values: 
+    se->vruntime; the sleeper 
+    cfs_rq->min_vruntime; 
+    the calculated vruntime; 
+    vruntime -= thresh; 
+    max(vruntime, se->vruntime). 
+    
+    It means: 
+    1) If sleepers is out of date,so it has a very small vruntime,we make it uptodate. 
+    2) else, the sleeps is a fake,which goes out and come back again in a shot period,so we make it fair,just stand at the right place.
+
 
 create from do_fork():
 place_entity(1)
