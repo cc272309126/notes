@@ -1,0 +1,162 @@
+2.6.21
+
+linux2621/arch/i386/boot
+├── bootsect.S
+├── compressed
+│   ├── head.S
+│   ├── Makefile
+│   ├── misc.c
+│   ├── relocs.c
+│   ├── vmlinux.lds
+│   └── vmlinux.scr
+├── edd.S
+├── install.sh
+├── Makefile
+├── mtools.conf.in
+├── setup.S
+├── tools
+│   └── build.c
+└── video.S
+
+linux2621/arch/i386/kernel
+└── head.S
+
+boot/bootsect.s load bzImage
+boot/setup.s init hardware, switch to protect mode  -- in bzImage / zImage
+boot/compressed/head.s,misc.c  decompressed kernel  -- in vmlinux.bin
+kernel/head.s enable page, setup gdt, jump to start_kernel -- in vmlinux
+vmlinux - piggy.o = vmlinux.bin.gz
+vmlinux.bin.gz -- vmlinux 
+
+
+
+bootsect.S
+_start
+    start2
+        .ascii  "Direct booting from floppy is no longer supported.\r\n"
+        .ascii  "Please use a boot loader program instead.\r\n"
+        
+setup.S - is responsible for getting the system data from the BIOS      
+        putting them into the appropriate places in system memory.
+        both setup.s and system has been loaded by the bootblock.
+        
+start:
+    jmp trampoline
+trampoline: call    start_of_setup
+start_of_setup:
+     jmp good_sig1
+good_sig1:
+    jmp good_sig
+good_sig:
+    jnz loader_ok 
+loader_ok:
+     # method E820H:
+# Set the keyboard repeat rate to the max
+    call    video  
+# Get hd0 data...
+# Get hd1 data...
+# Check for PS/2 pointing device
+# Then check for an APM BIOS...
+# Now we want to move to protected mode ...
+    jz  rmodeswtch_normal
+rmodeswtch_normal:
+    call    default_switch
+rmodeswtch_end:
+# Now we move the system to its rightful place ... but we check if we have a
+# big-kernel. In that case we *must* not move it ...
+    jz  do_move0 
+    jmp end_move
+end_move:
+    je  end_move_self
+end_move_self:                  # now we are at the right place
+# Enable A20.  This is at the very best an annoying procedure.
+# set up gdt and idt and 32bit start address
+# make sure any possible coprocessor is properly reset..
+# well, that went ok, I hope. Now we mask all interrupts 
+# jump to startup_32 in arch/i386/boot/compressed/head.S
+startup_32:
+    # Jump to the 32bit entry point
+    jmpl *(code32_start - start + (DELTA_INITSEG << 4))(%esi)
+    
+compressed/head.S
+    startup_32:
+/* Copy the compressed kernel to the end of our buffer
+where decompression in place becomes safe. */
+/* Compute the kernel start address. */
+/*  Jump to the relocated address. */
+/*  Setup the stack for the decompressor */
+/*  Do the decompression, and jump to the new kernel.. */
+    call decompress_kernel  -- in misc.c
+/* Jump to the decompressed kernel. */  
+    jmp *%ebp
+
+
+kernel/head.S
+/* 32-bit kernel entrypoint; only used by the boot CPU */
+ENTRY(startup_32)
+/* Set segments to known values. */
+/* Clear BSS first so that there are no surprises... */
+/* Copy bootup parameters out of the way. */
+/*
+ * Initialize page tables.  This creates a PDE and a set of page
+ * tables, which are located immediately beyond _end.  The variable
+ * init_pg_tables_end is set up to point to the first "safe" location.
+ * Mappings are created both at virtual address 0 (identity mapping)
+ * and PAGE_OFFSET for up to _end+sizeof(page tables)+INIT_MAP_BEYOND_END.
+ */
+    jmp 3f   /* This is the boot CPU (BSP) */
+/*
+ * Non-boot CPU entry point; entered from trampoline.S
+ * We can't lgdt here, because lgdt itself uses a data segment, but
+ * we know the trampoline has already loaded the boot_gdt_table GDT
+ * for us.
+ */
+ENTRY(startup_32_smp)
+3:
+/*
+ * Enable paging
+ */
+/* Set up the stack pointer */  
+/*  Initialize eflags */
+/*
+ * start system 32-bit setup. We need to re-do some of the things done
+ * in 16-bit mode for the "real" operations.
+ */
+    call setup_idt
+/* check if it is 486 or 386. */
+/* XXX - this does a lot of unnecessary setup.  */
+    set up CR0
+    # reload all the segment registers after changing gdt
+# the first CPU calls start_kernel
+    jmp start_kernel
+# all other CPUs call initialize_secondary
+    jne initialize_secondary
+    
+kernel/Trampoline.S - This is only used for booting secondary CPUs in SMP machine
+/*
+ *  Entry: CS:IP point to the start of our code, we are
+ *  in real mode with no stack, but the rest of the
+ *  trampoline page to make our stack and everything else
+ *  is a mystery.
+ *
+ *  In fact we don't actually need a stack so we don't
+ *  set one up.
+ *
+ *  We jump into the boot/compressed/head.S code. So you'd
+ *  better be running a compressed kernel image or you
+ *  won't get very far.
+ *
+ *  On entry to trampoline_data, the processor is in real mode
+ *  with 16-bit addressing and 16-bit data.  CS has some value
+ *  and IP is zero.  Thus, data addresses need to be absolute
+ *  (no relocation) and are taken with regard to r_base.
+ */     
+ENTRY(trampoline_data)
+    /* GDT tables in non default location kernel can be beyond 16MB and
+     * lgdt will not be able to load the address as in real mode default
+     * operand size is 16bit. Use lgdtl instead to force operand size
+     * to 32 bit.
+     */
+    # flush prefetch and jump to startup_32_smp in arch/i386/kernel/head.S
+    ljmpl   $__BOOT_CS, $(startup_32_smp-__PAGE_OFFSET)
+
