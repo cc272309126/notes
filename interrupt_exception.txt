@@ -1,0 +1,150 @@
+2.6.21
+
+arch/i386/kernel/traps.c
+arch/i386/kernel/entry.S
+
+start_kernel
+    trap_init
+        set_trap_gate(0,&divide_error);
+
+arch/i386/kernel/entry.S
+ENTRY(divide_error)
+    RING0_INT_FRAME
+    pushl $0            # no error code
+    CFI_ADJUST_CFA_OFFSET 4
+    pushl $do_divide_error
+    CFI_ADJUST_CFA_OFFSET 4
+    jmp error_code
+    CFI_ENDPROC
+END(divide_error)
+
+do_divide_error
+DO_VM86_ERROR_INFO( 0, SIGFPE,  "divide error", divide_error, FPE_INTDIV, regs->eip)
+
+
+set_system_gate(SYSCALL_VECTOR,&system_call);
+    # system call handler stub
+ENTRY(system_call)
+    RING0_INT_FRAME         # can not unwind into user space anyway
+    pushl %eax          # save orig_eax
+    SAVE_ALL
+    GET_THREAD_INFO(%ebp)
+    testl $TF_MASK,PT_EFLAGS(%esp)
+    jz no_singlestep
+    orl $_TIF_SINGLESTEP,TI_flags(%ebp)
+no_singlestep:
+                    # system call tracing in operation / emulation
+    /* Note, _TIF_SECCOMP is bit number 8, and so it needs testw and not testb */
+    testw $(_TIF_SYSCALL_EMU|_TIF_SYSCALL_TRACE|_TIF_SECCOMP|_TIF_SYSCALL_AUDIT),TI_flags(%ebp)
+    jnz syscall_trace_entry
+    cmpl $(nr_syscalls), %eax
+    jae syscall_badsys
+syscall_call:
+    call *sys_call_table(,%eax,4)
+    movl %eax,PT_EAX(%esp)      # store the return value
+syscall_exit:
+    DISABLE_INTERRUPTS(CLBR_ANY)    # make sure we do not miss an interrupt
+                    # setting need_resched or sigpending
+                    # between sampling and the iret
+    TRACE_IRQS_OFF
+    movl TI_flags(%ebp), %ecx
+    testw $_TIF_ALLWORK_MASK, %cx   # current->work
+    jne syscall_exit_work
+
+restore_all:
+    movl PT_EFLAGS(%esp), %eax  # mix EFLAGS, SS and CS
+    # Warning: PT_OLDSS(%esp) contains the wrong/random values if we
+    # are returning to the kernel.
+    # See comments in process.c:copy_thread() for details.
+    movb PT_OLDSS(%esp), %ah
+    movb PT_CS(%esp), %al
+    andl $(VM_MASK | (SEGMENT_TI_MASK << 8) | SEGMENT_RPL_MASK), %eax
+    cmpl $((SEGMENT_LDT << 8) | USER_RPL), %eax
+    je ldt_ss           # returning to user-space with LDT SS
+restore_nocheck:
+    TRACE_IRQS_IRET
+restore_nocheck_notrace:
+    RESTORE_REGS
+    addl $4, %esp           # skip orig_eax/error_code
+1:  INTERRUPT_RETURN
+.section .fixup,"ax"
+iret_exc:
+    TRACE_IRQS_ON
+    ENABLE_INTERRUPTS(CLBR_NONE)
+    pushl $0            # no error code
+    pushl $do_iret_error
+    jmp error_code
+.previous
+.section __ex_table,"a"
+    .align 4
+    .long 1b,iret_exc
+.previous
+
+ldt_ss:
+    larl PT_OLDSS(%esp), %eax
+    jnz restore_nocheck
+    testl $0x00400000, %eax     # returning to 32bit stack?
+    jnz restore_nocheck     # allright, normal return
+
+    /* If returning to userspace with 16bit stack,
+     * try to fix the higher word of ESP, as the CPU
+     * won't restore it.
+     * This is an "official" bug of all the x86-compatible
+     * CPUs, which we can try to work around to make
+     * dosemu and wine happy. */
+    movl PT_OLDESP(%esp), %eax
+    movl %esp, %edx
+    call patch_espfix_desc
+    pushl $__ESPFIX_SS
+    pushl %eax
+    DISABLE_INTERRUPTS(CLBR_EAX)
+    TRACE_IRQS_OFF
+    lss (%esp), %esp
+    jmp restore_nocheck
+ENDPROC(system_call)
+
+set_intr_gate(LOCAL_TIMER_VECTOR, apic_timer_interrupt);
+
+
+
+linux/include/asm/hw_irq.h
+    extern void (*interrupt[NR_IRQS])(void);
+
+arch/i386/kernel/io_apic.c
+    ioapic_register_intr
+        set_intr_gate(vector, interrupt[irq]);
+
+arch/i386/kernel/entry.S
+/*
+ * Build the entry stubs and pointer table with
+ * some assembler magic.
+ */
+.data
+ENTRY(interrupt)
+.text
+
+ENTRY(irq_entries_start)
+    RING0_INT_FRAME
+vector=0
+.rept NR_IRQS
+    ALIGN
+ .if vector
+    CFI_ADJUST_CFA_OFFSET -4
+ .endif
+1:  pushl $~(vector)
+    CFI_ADJUST_CFA_OFFSET 4
+    jmp common_interrupt
+ .previous
+    .long 1b
+ .text
+vector=vector+1
+.endr
+END(irq_entries_start)
+
+.previous
+END(interrupt)
+
+interrupt[irq]
+    common_interrupt
+        call do_IRQ
+
