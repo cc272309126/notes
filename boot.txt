@@ -19,6 +19,7 @@ linux2621/arch/i386/boot
 └── video.S
 
 linux2621/arch/i386/kernel
+├── Trampoline.S
 └── head.S
 
 boot/bootsect.s load bzImage
