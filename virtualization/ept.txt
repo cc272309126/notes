@@ -26,3 +26,109 @@ determine the guest PTE’s physical address.
 PTE. The guest-physical address determined by this offset is translated through EPT to determine the physical 
 address to which the original linear address translates.
 
+
+内存虚拟化实际就是进行地址转换从客户机虚拟地址-->客户机物理地址-->宿主机的物理地址，转换实现有两种硬件内存虚拟化和软件影子页表方式， 下面主要分析基于intel ept硬件内存虚拟化实现，此实现主要做两件事情
+1.开启ept功能2.构造转换页表。注意该页表构造采用动态方式（常说懒惰方式），就是不到完不得以情况不创建。此页表创建实现就是采用ept violation捕获，一步一步创建起来的。
+
+虚拟机每一次运行，都必须载入ept页表
+如果cr3内容无效，分配物理页作为ept页表根，此物理页地址作为cr3寄存器内容，也就是ept根目录，所有页表查询和转换基于cr3转换的，有效话不必分配了，直接使用。
+
+vcpu_enter_guest
+    kvm_mmu_reload
+        if (likely(vcpu->arch.mmu.root_hpa != INVALID_PAGE))
+            return 0;
+        return kvm_mmu_load(vcpu);      
+            r = mmu_alloc_roots(vcpu);  /*这里应该是关键的地方*/
+            kvm_mmu_sync_roots(vcpu); //这里是同步,这里的必要性
+            if (r)
+                goto out;
+            /* set_cr3() should ensure TLB has been flushed */
+            /* kvm_x86_ops->set_tdp_cr3 = vmx_set_cr3 */
+            vcpu->arch.mmu.set_cr3(vcpu, vcpu->arch.mmu.root_hpa); //vcpu中cr3寄存器的地址要指向这个根页表的物理地址
+            vmx_set_cr3
+                eptp = construct_eptp(cr3);
+                vmcs_write64(EPT_POINTER, eptp);
+                guest_cr3 = kvm_read_cr3(vcpu);
+                vmx_flush_tlb(vcpu);
+                vmcs_writel(GUEST_CR3, guest_cr3);
+    
+    r = kvm_x86_ops->handle_exit(vcpu);
+    vmx_handle_exit
+        kvm_vmx_exit_handlers[exit_reason](vcpu);
+            [EXIT_REASON_EPT_VIOLATION]  = handle_ept_violation,
+            [EXIT_REASON_EPT_MISCONFIG]  = handle_ept_misconfig,
+
+handle_ept_misconfig
+EPT misconfigurations 出现在对应的表项不合法，正常情况下不应该出现，KVM对其进行记录，不进行处理。
+
+EPT misconfigurations 出现在对应的表项不合法，EPT violations出现在表项不允许访问或者不存在。
+对于EPT violations引起的vm exit：
+gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+kvm_mmu_page_fault(vcpu, gpa & PAGE_MASK, 0);
+tdp_page_fault处理如下，gpa 根据计算出来pfn，然后调用__direct_map函数，填充对应的表项。 
+
+handle_ept_violation
+    exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
+    gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+    kvm_mmu_page_fault(vcpu, gpa, error_code, NULL, 0);
+        vcpu->arch.mmu.page_fault(vcpu, cr2, error_code, false);
+        context->page_fault = tdp_page_fault;
+        tdp_page_fault
+            try_async_pf
+            __direct_map
+                
+            
+kvm_vm_ioctl
+    case KVM_CREATE_VCPU:
+    r = kvm_vm_ioctl_create_vcpu(kvm, arg);
+        kvm_arch_vcpu_setup
+            kvm_mmu_setup
+                init_kvm_mmu
+                    init_kvm_tdp_mmu
+                        context->page_fault = tdp_page_fault;
+                        context->update_pte = nonpaging_update_pte;
+                        context->root_hpa = INVALID_PAGE;   //这里是很重要的，因为根页表INVALID_PAGE
+                        context->direct_map = true;     // __direct_map。spte 即 shadow page table entry。
+                        context->set_cr3 = kvm_x86_ops->set_tdp_cr3;
+                        
+tdp_page_fault
+    try_async_pf
+        gfn_to_pfn_prot
+            __gfn_to_pfn
+
+gfn_to_pfn
+    __gfn_to_pfn
+        __gfn_to_pfn_memslot
+            hva_to_pfn          
+            
+获取EXIT_QUALIFICATION内容，了解ept violation退出的原因，原因有读，写等引起。
+handle_ept_violation
+如果客户机跟踪GVA-GPA映射是不存在的，一个页面故障产生。VMM 将截获此故障，handle_ept_violation函数被调用，通过EPT的故障处理函数tdp_page_fault进行GPA到HPA处理。如果相应ept页表不存在，构建此页表。
+
+客户机物理地址转换为客户机物理页框号，将客户机物理页框号转换为宿主机物理地址页框号。
+
+将客户机物理页框号转换为宿主机物理地址页框号分为两步
+客户机页框号转换为宿主机虚拟地址 -- gfn_to_hva
+将宿主机虚拟地址转换为宿主机物理地址，并将宿主机物理地址装换为宿主机物理地址页框号，注意此转换可能设计宿主机物理页确页不存在，那么需要分配相应物理页 -- hva_to_pfn
+
+            
+在ept页表相应页表项中设置客户机的物理地址。
+大概过程如下：如果找到最终level的相应ept表项，设置物理地址。否则相应level不存在分配ept页表，把分配页表物理地址设置上一级level页表项中,重复该过程
+最终level设置函数调用mmu_set_spte，中间level的设置函数为调用__set_spte 其实本质一样的，只不过相应表项内容的权限不一样。
+
+__direct_map
+    mmu_set_spte
+        set_spte
+
+翻译过程
+====================
+
+gva
+ | guest cr3
+gpa
+ | kvm_memory_slot
+hva 
+ | host cr3
+hpa
+
+ 
