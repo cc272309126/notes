@@ -1,0 +1,30 @@
+qemu-kvm-0.12.3
+ 
+Entry point:
+main(vl.c)
+      |
+kvm_init(qemu-kvm.c) -> machine->init(pc_init_pci in ./hw/pc.c)-> main_loop(vl.c)
+      |                                       |                               |
+kvm_create_context(qemu-kvm.c)             pc_init1(pc.c)    kvm_main_loop(q-k.c)->main_loop_wait
+      |                                       |                               |
+kvm_create(qemu-kvm.c)                    pc_new_cpu(pc.c)    qemu_signalfd(compatfd.c)
+      |                                       |                               |
+ioctl(KVM_CREATE_VM)              qemu_init_vcpu(vl.c)   qemu_signalfd_compat(compatfd.c)
+                                              |                               |
+                                kvm_init_vcpu(qemu-kvm.c)       pthread_create##Signal Thread
+                                              |
+                                pthread_create##VCPU Thread
+                                              |
+                                ap_main_loop(qemu-kvm.c)
+                                              |
+                                kvm_create_vcpu(qemu-kvm.c)
+                                              |
+                                ioctl(KVM_CREATE_VCPU)
+                                
+QEMU threads code path:
+io thread        --->   main_loop_wait(vl.c)   --> select
+vcpu thread    ---> ap_main_loop(qemu-kvm.c)   --> kvm_main_loop_cpu
+signal thread  --->   sigwait_compat(compatfd.c) --> sigwaitinfo
+QEMU timer emulation path:
+main(vl.c)  ---> init_timer_alarm(vl.c) ---> dynticks_start_timer ---> sigaction(SIGALARM, host_alarm_handler) --> timer_create
+             (or  ---> hpet_start_timer ---> open(/dev/hpet) ---> enable_sigio_timer --> sigaction(SIGIO, host_alarm_handler)

@@ -1,0 +1,7 @@
+PCI-Passthrough
+
+1: guest 在iommu 中分配一个domain
+2: guest 的所有memslot映射到 iommu
+3: attach pci device
+4: 中断需要传递，内存和dma直接处理
+

@@ -1,0 +1,128 @@
+设备IO虚拟化 
+
+1. 虚拟设备的IO地址注册
+====================
+
+
+KVM虚拟机的设备模拟是在QEMU中实现的，而KVM实现的实质上只是IO的拦截。换句话说，真正的虚拟设备IO地址注册是在QEMU代码里面实现的
+两种IO注册方法：
+(1) PIO（port IO） 端口IO
+(2) MIO（memory may IO）内存映射IO
+
+register_ioport_read
+register_ioport_write
+对于PCI设备来说，IO地址注册就要多一步，因为要进行PCI bar地址与IO的映射，所以必须先调用下面函数来给bar注册PCI地址。
+pci_register_bar
+
+void pci_register_bar(PCIDevice *pci_dev, int region_num,
+                            pcibus_t size, uint8_t type,
+                            PCIMapIORegionFunc *map_func)；
+static void map_func(PCIDevice *pci_dev,int region_num, pcibus_t addr,pcibus_t size,int type)；
+
+举个例子
+1.注册PIC地址。空间0x800，映射函数xche_ioport_map。
+pci_register_bar(&s->dev,1,0x800,PCI_BASE_ADDRESS_SPACE_IO,xche_ioport_map);
+2.实现映射函数，PCI bar地址初始化以后会将映射IO的起始地址作为addr参数传到映射函数，然后通过之前的register函数注册IO地址空间，在这个操作以后，一旦这些位的IO发生读写，虚拟机就会产生VM-exit,进而我们的ioread和iowrite就能够被调用。
+static void xche_ioport_map(PCIDevice *pci_dev,int region_num,pcibus_t addr,pcibus_t size,int type)
+{
+      CXState *s = DO_UPCAST(CXState,dev,pci_dev);
+      register_ioport_write(addr,0x800,1,xche_ioport_writeb,s);
+      register_ioport_read(addr,0x800,1,xche_ioport_readb,s);
+}
+
+
+qemu-2.2.0 中的实现
+
+hw/timer/pl031.c
+type_init(pl031_register_types)
+    type_register_static(&pl031_info);
+         .class_init    = pl031_class_init,
+            k->init = pl031_init;
+
+static int pl031_init(SysBusDevice *dev)
+{
+    PL031State *s = PL031(dev);
+    struct tm tm;
+
+    memory_region_init_io(&s->iomem, OBJECT(s), &pl031_ops, s, "pl031", 0x1000);
+    sysbus_init_mmio(dev, &s->iomem);
+
+    sysbus_init_irq(dev, &s->irq);
+    qemu_get_timedate(&tm, 0);
+    s->tick_offset = mktimegm(&tm) -
+        qemu_clock_get_ns(rtc_clock) / get_ticks_per_sec();
+
+    s->timer = timer_new_ns(rtc_clock, pl031_interrupt, s);
+    return 0;
+}
+
+static const MemoryRegionOps pl031_ops = {
+    .read = pl031_read,
+    .write = pl031_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+
+hw/timer/hpet.c
+
+
+2. KVM IO地址的拦截
+====================
+
+QEMU:
+
+type_init(kvm_type_init);
+    type_register_static(&kvm_accel_type);
+        .class_init = kvm_accel_class_init,
+            ac->init_machine = kvm_init;
+                    memory_listener_register(&kvm_memory_listener, &address_space_memory);
+                    memory_listener_register(&kvm_io_listener, &address_space_io);
+                    
+static MemoryListener kvm_memory_listener = {
+    .region_add = kvm_region_add,
+    .region_del = kvm_region_del,
+    .log_start = kvm_log_start,
+    .log_stop = kvm_log_stop,
+    .log_sync = kvm_log_sync,
+    .log_global_start = kvm_log_global_start,
+    .log_global_stop = kvm_log_global_stop,
+    .eventfd_add = kvm_mem_ioeventfd_add,
+    .eventfd_del = kvm_mem_ioeventfd_del,
+    .coalesced_mmio_add = kvm_coalesce_mmio_region,
+    .coalesced_mmio_del = kvm_uncoalesce_mmio_region,
+    .priority = 10,
+};
+
+static MemoryListener kvm_io_listener = {
+    .eventfd_add = kvm_io_ioeventfd_add,
+    .eventfd_del = kvm_io_ioeventfd_del,
+    .priority = 10,
+};
+
+kvm_mem_ioeventfd_add
+    kvm_set_ioeventfd_mmio
+        kvm_vm_ioctl(kvm_state, KVM_IOEVENTFD, &iofd);
+
+kvm_io_ioeventfd_add
+    kvm_set_ioeventfd_pio
+        kvm_vm_ioctl(kvm_state, KVM_IOEVENTFD, &kick);
+
+KVM:
+kvm_vm_ioctl
+    case KVM_IOEVENTFD: {
+        struct kvm_ioeventfd data;
+
+        r = -EFAULT;
+        if (copy_from_user(&data, argp, sizeof data))
+            goto out;
+        r = kvm_ioeventfd(kvm, &data);
+        break;
+    }
+
+kvm_ioeventfd
+    kvm_assign_ioeventfd
+        
+        
+3.KVM IO读写处理
+====================
+
+

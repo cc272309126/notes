@@ -1,0 +1,59 @@
+kvm-kmod-2.6.33.1
+
+static struct kvm_x86_ops vmx_x86_ops={} ----> x86/vmx.c
+kvm kernel module entry point
+Execution path after kvm kernel module being loaded(insmode kvm.ko, kvm_intel.ko).
+vmx_init(vmx.c)
+      |
+  kvm_init(kvm_main.c)
+      |
+  kvm_arch_init(kvm_main.c) --> kvm_arch_hardware_setup
+      |                                    |
+  kvm_timer_init(x86.c)         kvm_x86_ops->hardware_setup(vmx.c)
+                                           |
+                                setup_vmcs_config(vmx.c)  --> alloc_kvm_area(vmx.c)
+                                                                     | for_each_cpu
+                                                                alloc_vmcs_cpu(vmx.c)
+
+kvm kernel module handles KVM_RUN request from userspace:
+KVM_RUN ---> kvm_vcpu_ioctl (kvm_main.c)
+                                  | 
+               kvm_arch_vcpu_ioctl_run(x86/x86.c)
+                                  |
+                   __vcpu_run(x86.c)
+                                  |
+                       vcpu_enter_guest
+                                  |
+        kvm_x86_ops->run(vmx_vcpu_run in vmc.c)
+        
+Handle guest io instructions:
+vcpu_enter_guest  
+           |                    vmexit
+kvm_x86_ops->run ---> kvm_x86_ops->handle_exit(vmx_handle_exit)
+                                                     |
+                    kvm_vmx_exit_handlers[exit_reason](handle_io in vmc.c)
+                                                     |
+                                      kvm_emulate_pio (x86.c)
+                                                     |                       
+                                                  /      \      
+                                         return 0    kernel_pio(x86.c) --> complete_io
+                                               |                         |
+                                        return (userspace)     vcpu_enter_guest
+                                            | mode switch@ qemu-kvm
+                                kvm_handle_io (kvm_run() kvm_all.c)
+                                            |
+                                    ioctl(KVM_RUN)
+                
+   Allocate and initialize VMCS for a vcpu:             
+KVM_CREATE_VCPU ---> kvm_vm_ioctl (kvm_main.c)
+                          | 
+                        kvm_vm_ioctl_create_vcpu(kvm_main.c)
+                          |
+                        kvm_arch_vcpu_create(x86.c)
+                          |
+                        kvm_x86_ops->vcpu_create(vmx_create_vcpu in vmc.c) 
+                                  | 
+                      alloc_vmcs(vmx.c)   --->              vmx_vcpu_setup
+                                  |                                   |
+                      alloc_vmcs_cpu(vmx.c)     vmcs_writel  -->  guest_write_tsc
+

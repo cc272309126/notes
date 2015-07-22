@@ -1,0 +1,28 @@
+EPT
+====================
+
+    Guest虚拟地址 -> Guest物理地址 -> Host物理地址
+                 ^               ^
+                 |               |
+                MMU1            MMU2
+                
+MMU1由硬件提供=guest CR3。
+MMU2可以由软件模拟(Shadow paging中的vTLB)或者硬件实现(Intel EPT、AMD NPT)。
+
+When EPT is in use, certain addresses that would normally be treated as physical addresses (and used to 
+access memory) are instead treated as guest-physical addresses. Guest-physical addresses are translated by 
+traversing a set of EPT paging structures to produce physical addresses that are used to access memory.
+
+If CR0.PG = 1, the translation of a linear address to a physical address requires multiple translations of guest-phys-
+ical addresses using EPT. Assume, for example, that CR4.PAE = CR4.PSE = 0. The translation of a 32-bit linear 
+address then operates as follows:
+• Bits 31:22 of the linear address select an entry in the guest page directory located at the guest-physical 
+address in CR3. The guest-physical address of the guest page-directory entry (PDE) is translated through EPT 
+to determine the guest PDE’s physical address.
+• Bits 21:12 of the linear address select an entry in the guest page table located at the guest-physical address in 
+the guest PDE. The guest-physical address of the guest page-table entry (PTE) is translated through EPT to 
+determine the guest PTE’s physical address.
+• Bits 11:0 of the linear address is the offset in the page frame located at the guest-physical address in the guest 
+PTE. The guest-physical address determined by this offset is translated through EPT to determine the physical 
+address to which the original linear address translates.
+
