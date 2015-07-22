@@ -132,3 +132,16 @@ hva
 hpa
 
  
+__gfn_to_pfn
+    slot = gfn_to_memslot(kvm, gfn); -- find slot
+        search_memslots(slots, gfn);
+            (gfn >= memslot->base_gfn && gfn < memslot->base_gfn + memslot->npages)
+    __gfn_to_pfn_memslot
+        addr = __gfn_to_hva_many(slot, gfn, NULL, write_fault); -- find hva = gpa + slot_base
+            __gfn_to_hva_memslot
+                slot->userspace_addr + (gfn - slot->base_gfn) * PAGE_SIZE
+        hva_to_pfn(addr, atomic, async, write_fault, writable);
+        
+hva_to_pfn
+    hva_to_pfn_fast
+        
