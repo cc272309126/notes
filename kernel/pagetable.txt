@@ -1,0 +1,156 @@
+
+page table
+
+pagetable_init
+
+linux页表创建与更新
+
+简单来说，讨论linux页表就是讨论linux进程的的页表：linux页表的创建与更新都包含于进程的创建与更新中。当前的linux内核采用的是写时复制方法，在创建一个linux进程时，完全复制父进程的页表，并且将父子进程的页表均置为写保护（即写地址的时候会产生缺页异常等）。那么父子进程谁向地址空间写数据时，产生缺页异常，分配新的页，并将两个页均置为可写，按照这种方式父子进程的地址空间渐渐变得不同。
+    按照上面的分析, 只需要讨论第一个进程页表初始化，进程创建时页表的拷贝，以及缺页异常时页表的更新即可。
+
+1.init_task进程页表的初始化
+    init_task的地址空间是init_mm, init_mm在内核初始化的时候就赋值给了current->active_mm. init_mm的初始化页表是swapper_pg_dir，在mips架构中swapper_pg_dir初始化在函数pagetable_init中，初始化关系是
+swapper_pg_dir -> invalide_pmd_table -> invalide_pte_table 或
+swapper_pg_dir -> invalide_pte_table.
+即在init_mm中，页表指向的全部是invalide_pte_table。
+
+
+2.创建进程时页表的拷贝
+    进程创建一般调用的是do_fork函数，按照如下调用关系：
+    do_fork->copy_process->copy_mm->dup_mm->dup_mmap->copy_page_range
+    找到copy_page_range函数，这个函数便是负责页表的拷贝
+    copy_pud_range便是拷贝pud表，copy_pud_range调用copy_pmd_range, copy_pmd_range调用copy_pte_range，以此完成对三级页表的复制。
+    
+    注意的是在copy_pte_range调用的copy_one_pte中有如下代码：
+ 694     if (is_cow_mapping(vm_flags)) {
+ 695         ptep_set_wrprotect(src_mm, addr, src_pte);
+ 696         pte = pte_wrprotect(pte);
+ 697     }
+这里便是判断如果采用的是写时复制，便将父子页均置为写保护，即会产生如下所示的缺页异常。
+
+
+3.缺页异常时页表的更新
+  由页表的初始化可以看到，init_mm的页表全指向无效页表，然而普通的进程中不可能页表均指向无效项，因此肯定拥有一个不断扩充页表的机制，这个机制是通过缺页异常实现的。
+  以mips为例，mips的缺页异常最终会调用do_page_fault，do_page_fault调用handle_mm_fault，handle_mm_fault是公共代码
+  
+4:  context_switch -- switch_mm
+
+/*
+ * context_switch - switch to the new MM and the new
+ * thread's register state.
+ */
+static inline
+task_t * context_switch(runqueue_t *rq, task_t *prev, task_t *next)
+{
+    struct mm_struct *mm = next->mm;
+    struct mm_struct *oldmm = prev->active_mm;
+
+    if (unlikely(!mm)) {
+        next->active_mm = oldmm;
+        atomic_inc(&oldmm->mm_count);
+        enter_lazy_tlb(oldmm, next);
+    } else
+        switch_mm(oldmm, mm, next);
+
+    if (unlikely(!prev->mm)) {
+        prev->active_mm = NULL;
+        WARN_ON(rq->prev_mm);
+        rq->prev_mm = oldmm;
+    }
+
+    /* Here we just switch the register state and the stack. */
+    switch_to(prev, next, prev);
+
+    return prev;
+}
+
+switch_mm(oldmm, mm, next);
+    load_cr3(mm->pgd);
+    
+
+
+copy_mm
+    oldmm = current->mm;
+    mm = allocate_mm();
+    memcpy(mm, oldmm, sizeof(*mm));
+    mm_init(mm)
+        mm_alloc_pgd(mm)
+            mm->pgd = pgd_alloc(mm);            
+    dup_mmap(mm, oldmm);
+    
+
+asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code) 
+{ 
+...... 
+if (unlikely(address >= TASK_SIZE)) { 
+if (!(error_code & 5)) 
+goto vmalloc_fault; 
+...... 
+vmalloc_fault: 
+    { 
+    ...... 
+    int index = pgd_index(address);//得到缺页地址应该所在的页全局目录的目录项索引 
+    pgd_t *pgd, *pgd_k; 
+    pmd_t *pmd, *pmd_k; 
+    pte_t *pte_k; 
+    asm("movl %%cr3,%0":"=r" (pgd));//读出当前进程的页全局目录的位置 
+    pgd = index + (pgd_t *)__va(pgd);//得到具体的对应于缺页地址的目录项 
+    pgd_k = init_mm.pgd + index;//swapper_pgd_dir中队应的目录项 
+    if (!pgd_present(*pgd_k))//如果swapper_pgd_dir模板中都没有，准备后事吧 
+    goto no_context;//善后 
+    ...... 
+    pmd = pmd_offset(pgd, address);//以下的分析方法同上 
+    pmd_k = pmd_offset(pgd_k, address); 
+    if (!pmd_present(*pmd_k)) 
+    goto no_context;//善后 
+    set_pmd(pmd, *pmd_k); 
+    pte_k = pte_offset_kernel(pmd_k, address);//内核和用户进程共享内核页表，因此以下也就没有set_pmd(pmd, *pmd_k)之类的了 
+    if (!pte_present(*pte_k)) 
+    goto no_context; 
+    return;//最终引起缺页的地址的MMU元素被创建，访问重新开始 
+    } 
+} 
+
+cr3寄存器的加载
+
+cr3寄存器的加载是在进程调度的时候更新的，具体如下
+
+schedule()->context_switch()->switch_mm()->load_cr3(next->pgd)
+
+load_cr3加载的是mm_struct->pgd，即线性地址，而实际上加裁到cr3寄存器的是实际的物理地址write_cr3(__pa(pgdir));在装载cr3寄存器时将线性地址通过__pa转换成了物理地址了，所以cr3寄存器是装的是实实在在的物理地址。
+
+进程的内核页全局目录的装载过程
+
+do_fork()->copy_process()->copy_mm()(如果是fork一个内核线程kernel thread的话，内核线程将会直接使用当前普通进程的页表集，内核线程并不拥有自己的页表集)->dup_mm()->mm_init()->mm_alloc_pgd()->pgd_alloc
+ pgd_ctor(mm, pgd)   //将swapper_pg_dir全局页目录（部分后256项--即内核最后1G的虚拟地址,这里指的是内核的页表）拷到pgd里，则可以看出，linux下所有进程的内核页全局目录是一样的，都是swapper_pg_dir里最后的1/4的内容，而每个进程的用户态的页表确是不同的，所以在dup_mmap会去将父进程的页表一项一项的爬出来设置为当前进程的页表。
+ 
+进程的用户态地址页拷贝
+dup_mmap()函数实现页表映射的拷贝
+copy_page_range(mm, oldmm, mpnt); //最后进行重新映射,要是没有这项(页表复制)的话，即使有合法访问的虚拟存储区域，但是没有正确的页表，不能访问到具体的物理内存，所以为了能建立正确的页映射，使进程能够访问到具体的物理页。
+
+
+物理页的分配，实质上不是页表的映射。
+一个物理页，被映射到了页表，并不等于它已经不可用，被分配掉了。
+它到底有没有被分配，看的是buddy system.buddy system没有将一个物理页分配，就算这个页被映射到了页表
+也认为它没有被使用。其实如果这个页已经被映射到了内核页表，已经具有被使用的能力了。可以访问了。假如
+故意的话，已经可以使用了。但是buddy system并不知道，它没有将此页标记为使用。它认为这页还可以被分配。
+
+
+Summary: 内核对这个问题的解决方法是：在内核页表发生变化之后，内核(暂时)只更新master kernel PGD(Page Global Directory)，即swapper_pg_dir，当其它进程访问到这个页表的时候，会发生异常(即ARM的fault)，那么kernel会把swapper_pg_dir的相应页表项拷贝到当前进程的的对应项，通过这种方式保持了内核页表在不同进程之间的所谓"同步"。
+
+代码：
+1. 内核建立新映射从而更新页表：
+(-->表示函数调用)
+vmalloc --> __vmalloc_node_flags --> __vmalloc_node --> __vmalloc_node_range --> __vmalloc_area_node --> (此处可能有递归但最终会调用此函数：) map_vm_area --> vmap_page_range --> vmap_page_range_noflush --> vmap_pud_range --> vmap_pmd_range --> vmap_pte_range --> pte_alloc_kernel --> __pte_alloc_kernel --> pmd_populate_kernel(&init_mm, pmd, new); ====> 此处内核页表被更新
+
+2. 另一个进程的内核页表完全不知道这回事，因此在第一次访问的时候会发生异常，这个异常由do_translation_fault函数来handle：
+do_translation_fault --> 
+
+do_page_fault
+    __do_page_fault
+        fault_in_kernel_space
+        vmalloc_fault
+            vmalloc_sync_one
+                set_pmd
+                
+
