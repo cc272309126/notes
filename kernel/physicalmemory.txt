@@ -1,0 +1,518 @@
+physical memory
+
+typedef struct pglist_data {
+    struct zone node_zones[MAX_NR_ZONES];
+    struct zonelist node_zonelists[MAX_ZONELISTS]; /*list中zone的顺序代表了分配内存的顺序，前者分配内存失败将会到后者的区域中分配内存*/  
+    int nr_zones;
+    struct page *node_mem_map;
+    struct bootmem_data *bdata;
+    unsigned long node_start_pfn;   /*该节点的起始页框编号*/  
+    unsigned long node_present_pages; /* total number of physical pages */
+    unsigned long node_spanned_pages; /* total size of physical page range, including holes */
+    int node_id;
+    nodemask_t reclaim_nodes;   /* Nodes allowed to reclaim from */
+    wait_queue_head_t kswapd_wait;  /*页换出进程使用的等待队列*/  
+    wait_queue_head_t pfmemalloc_wait;
+    struct task_struct *kswapd; /* Protected by lock_memory_hotplug() */  /*指向页换出进程的进程描述符*/  
+    int kswapd_max_order;    /*kswapd将要创建的空闲块的大小取对数的值*/  
+    enum zone_type classzone_idx;
+} pg_data_t;
+
+
+struct zone {
+    /* Fields commonly accessed by the page allocator */
+    /* zone watermarks, access with *_wmark_pages(zone) macros */
+    unsigned long watermark[NR_WMARK]; /*该管理区的三个水平线值，min,low,high*/  
+    unsigned long percpu_drift_mark;
+    unsigned long       lowmem_reserve[MAX_NR_ZONES];  /*每个管理区必须保留的页框数*/  
+
+    /*
+     * This is a per-zone reserve of pages that should not be
+     * considered dirtyable memory.
+     */
+    unsigned long       dirty_balance_reserve;
+
+#ifdef CONFIG_NUMA
+    int node;
+    /*
+     * zone reclaim becomes active if more unmapped pages exist.
+     */
+    unsigned long       min_unmapped_pages; /*当可回收的页面数大于该变量时，管理区将回收页面*/  
+    unsigned long       min_slab_pages;     /*同上，只不过该标准用于slab回收页面中*/  
+#endif
+    struct per_cpu_pageset __percpu *pageset;
+    /*
+     * free areas of different sizes
+     */
+    spinlock_t      lock;
+
+    struct free_area    free_area[MAX_ORDER];
+
+#ifndef CONFIG_SPARSEMEM
+    /*
+     * Flags for a pageblock_nr_pages block. See pageblock-flags.h.
+     * In SPARSEMEM, this map is stored in struct mem_section
+     */
+    unsigned long       *pageblock_flags;
+#endif /* CONFIG_SPARSEMEM */
+
+#ifdef CONFIG_COMPACTION
+    /*
+     * On compaction failure, 1<<compact_defer_shift compactions
+     * are skipped before trying again. The number attempted since
+     * last failure is tracked with compact_considered.
+     */
+    unsigned int        compact_considered;
+    unsigned int        compact_defer_shift;
+    int         compact_order_failed;
+#endif
+
+    ZONE_PADDING(_pad1_)
+
+    /* Fields commonly accessed by the page reclaim scanner */
+    spinlock_t      lru_lock;
+    struct lruvec       lruvec;
+
+    unsigned long       pages_scanned;     /* since last reclaim */
+    unsigned long       flags;         /* zone flags, see below */
+
+    /* Zone statistics */
+    atomic_long_t       vm_stat[NR_VM_ZONE_STAT_ITEMS];
+
+    /*
+     * The target ratio of ACTIVE_ANON to INACTIVE_ANON pages on
+     * this zone's LRU.  Maintained by the pageout code.
+     */
+    unsigned int inactive_ratio;
+
+
+    ZONE_PADDING(_pad2_)
+    /* Rarely used or read-mostly fields */
+
+    wait_queue_head_t   * wait_table;
+    unsigned long       wait_table_hash_nr_entries;
+    unsigned long       wait_table_bits;
+
+
+    struct pglist_data  *zone_pgdat;
+    /* zone_start_pfn == zone_start_paddr >> PAGE_SHIFT */
+    unsigned long       zone_start_pfn;
+
+    unsigned long       spanned_pages;
+    unsigned long       present_pages;
+    unsigned long       managed_pages;
+
+    int         nr_migrate_reserve_block;
+
+    /*
+     * rarely used fields:
+     */
+    const char      *name;
+} ____cacheline_internodealigned_in_smp;
+
+
+arch/x86/boot/main.c
+main
+    detect_memory
+        detect_memory_e820
+        detect_memory_e801
+        detect_memory_88
+            intcall(0x15, &ireg, &oreg);
+
+start_kernel
+    setup_arch
+        setup_memory_map
+            x86_init.resources.memory_setup(); == default_machine_specific_memory_setup
+            default_machine_specific_memory_setup
+                sanitize_e820_map   --  /*消除重叠的内存段*/  
+                append_e820_map
+                /*将内存布局的信息从boot_params.e820_map拷贝到struct e820map e820*/ 
+                
+        max_pfn = e820_end_of_ram_pfn();
+        find_low_pfn_range
+            lowmem_pfn_init  /*实际物理内存小于等于低端内存896M*/  
+             /*将分界线初始化为实际物理内存的最大页框号，由于系统的内存小于896M， 
+    所以全部内存为低端内存，如需要高端内存，则从中分一部分出来进行分配*/  
+                #ifdef CONFIG_HIGHMEM  /*如果用户定义了HIGHMEM，即需要分配高端内存*/ 
+                 /*这个条件保证低端内存不能小于64M*/  
+                /*设定好低、高端内存的分界线*/  
+            highmem_pfn_init
+                /*设定高端内存和低端内存的分界线*/  
+                /*未设定高端内存的页框数*/  /*默认为最大页框数减去MAXMEM_PFN*/  
+                /*高端内存页框数加上MAXMEM_PFN小于最大页框数*/  /*将最大页框数下调到前两者的和*/  
+                /*申请的高端内存超过范围则不分配*/  
+            至此，已将内存探测和高低端内存的划分分析完了，接下来再分析管理区的初始化。
+
+            
+        init_mem_mapping
+            end = max_low_pfn << PAGE_SHIFT;
+            kernel_end = __pa_symbol(_end);
+            memory_map_bottom_up(kernel_end, end);
+            early_ioremap_page_table_range_init
+            
+在init_memory_mapping()中完成了低端内存映射后，其将调用early_ioremap_page_table_range_init()来建立高端内存的固定映射区页表。与低端内存的页表初始化不同的是，固定映射区的页表只是被分配，相应的PTE项并未初始化，这个工作交由后面的各个固定映射区部分的相关代码调用set_fixmap()来将相关的固定映射区页表与物理内存关联。
+            
+            
+        initmem_init
+            setup_bootmem_allocator
+                /* 从e820里面去找一个size合适的物理内存作为 bootmem的map */
+                bootmap = find_e820_area(0, max_pfn_mapped<<PAGE_SHIFT, bootmap_size, PAGE_SIZE); 
+                setup_node_bootmem
+                    init_bootmem_node
+                        init_bootmem_core
+                            bdata->node_bootmem_map = phys_to_virt(PFN_PHYS(mapstart));
+                            memset(bdata->node_bootmem_map, 0xff, mapsize);
+
+高端内存永久映射区页表的建立
+        x86_init.paging.pagetable_init(); == native_pagetable_init
+        for x86_64 == paging_init
+            pagetable_init
+                permanent_kmaps_init
+            kmap_init
+        
+在内核首先通过setup_arch()-->paging_init()-->zone_sizes_init()来初始化节点和管理区的一些数据项
+ /*分别获取三个管理区的页面数*/  
+ 在获取了三个管理区的页面数后，通过free_area_init_nodes()来完成后续工作
+ 
+paging_init
+    zone_sizes_init
+        free_area_init_nodes
+            free_area_init_node
+            /*计算节点占用的总页面数和除去洞的实际总页面数*/  
+            /*分配节点的mem_map*/
+                alloc_node_mem_map
+
+至此，节点和管理区的关键数据已完成初始化，内核在后面为内存管理做得一个准备工作就是将所有节点的管理区都链入到zonelist中，便于后面内存分配工作的进行
+
+                
+start_kernel
+    setup_arch
+    build_all_zonelists(NULL, NULL);
+        set_zonelist_order --  /*设定zonelist的顺序，是按节点还是按管理区排序，只对NUMA有意义*/  
+        __build_all_zonelists
+        /*得到所有管理区可分配的空闲页面数*/  
+        vm_total_pages = nr_free_pagecache_pages();
+    mm_init
+        mem_init
+            free_all_bootmem
+                free_all_bootmem_core
+                    第一步:释放空闲页
+                    /*直接将整块内存释放*/
+                    int order = ilog2(BITS_PER_LONG);
+                    __free_pages_bootmem(pfn_to_page(start), order);
+                    /*否则只能逐页释放*/  
+                     第二步:释放保存bitmap的页
+                     /*逐页释放*/  
+                        __free_pages_bootmem
+                            __free_pages -- 添加到buddy system 
+                                
+                    
+reserve_bootmem_node
+reserve_bootmem
+    mark_bootmem_node(1)
+    mark_bootmem(1)
+free_bootmem
+free_bootmem_node
+    mark_bootmem_node(0)
+    mark_bootmem(0) 
+alloc_bootmem_core
+bootmem allocator销毁后，其空闲的内存将交由buddy system接管，核心函数为free_all_bootmem_core()
+free_all_bootmem_core
+    
+kernel normal map
+physical + pageoffset = virtual
+
+永久内核映射
+virtual - pageoffset =\= physical, 
+virtual  --map--> a fixed physical address , which not equal (virtual - pageoffset)
+
+临时内核映射
+virtual  --map--> a random physical address
+
+PAGE_OFFSET   high_memory   VMALLLOC_START     VMALLOC_END  PKMAP_BASE     FIXADDR_START         4GB
+|                  |         |                    |              |              |                  |
+|    normal        | 8mb     |  vmalloc  (4kb)    |  8kb         |              |                  |
+
+可以用来完成上述映射目的的区域为vmalloc area，Persistent kernel mappings区域和固定映射线性地址空间中的FIX_KMAP区域，这三个区域对应的映射机制分别为非连续内存分配，永久内核映射和临时内核映射。
+vmalloc area ==  非连续内存分配
+Persistent kernel mappings区域 == 永久内核映射
+固定映射线性地址空间中的FIX_KMAP区域 == 临时内核映射
+
+永久并不是指调用kmap()建立的映射关系会一直持续下去无法解除，而是指在调用kunmap()解除映射之间这种映射会一直存在，这是相对于临时内核映射机制而言的。
+
+临时内核映射和永久内核映射相比，其最大的特点就是不会阻塞请求映射页框的进程，因此临时内核映射请求可以发生在中断和可延迟函数中。系统中的每个CPU都有自己的临时内核映射窗口
+根据不同的需求，选择不同的窗口来创建映射，这些窗口都以枚举类型定义在km_type中
+
+enum km_type
+其中KM_TYPE_NR标志了一个CPU可以拥有多少个页表项窗口来建立映射。 临时内核映射的实现也比永久内核映射要简单，当一个进程申请在某个窗口创建映射，即使这个窗口已经在之前就建立了映射，新的映射也会建立并且覆盖之前的映射，所以说这种映射机制是临时的，并且不会阻塞当前进程。
+ 若要手动撤销当前的临时内核映射，则可调用kunmap_atomic()函数
+ 
+非连续内存分配是指将物理地址不连续的页框映射到线性地址连续的线性地址空间，主要应用于大容量的内存分配。采用这种方式分配内存的主要优点是避免了外部碎片，而缺点是必须打乱内核页表，而且访问速度较连续分配的物理页框慢。
+       非连续内存分配的线性地址空间是从VMALLOC_START到VMALLOC_END
+共128M，每当内核要用vmalloc类的函数进行非连续内存分配，就会申请一个vm_struct结构来描述对应的vmalloc区，两个vmalloc区之间的间隔至少为一个页框的大小，即PAGE_SIZE。
+所有的vm_struct都会链入vmlist链表来管理    
+ 
+
+ 
+ 持久映射和临时映射都可以是物理连续的，之所以存在三种机制，是因为linux设计的缺陷或者32位的限制，比如64bit就没有高端内存这个乱七八糟的东西。
+持久映射和临时映射的地址空间很小的，所以只能映射很小一部分高端内存，这两种都不是高端内存的常用使用方式
+最常用的高端内存使用方式是非连续分配方式，但是可同时使用的数量仍然受vmalloc区大小的限制。
+非连续内存区是使用vmalloc内核线性区，映射不连续的空间。
+其实还可以把连续高端内存映射到vmalloc区，比如ioremap实现。
+那么除了这几种方式，是不是高端内存就不能使用了呢？不是，高端内存虽然很难被kernel直接使用，但是仍然可以很方便的映射到应用空间，参见do_page_fault.
+所以也别想的太多，什么中断可用，中断不可用的，这几个东西就是维护者一拍脑袋临时设计出来的，结果是又难用，又复杂，搞得开发者晕头转向，到64bit机这些垃圾就不会烦大家了。
+比如kmap这个垃圾，谁会用它？
+
+
+
+struct free_area {
+    struct list_head    free_list[MIGRATE_TYPES];
+    unsigned long       nr_free;
+};
+
+
+enum {
+    MIGRATE_UNMOVABLE,
+    MIGRATE_RECLAIMABLE,
+    MIGRATE_MOVABLE,
+    MIGRATE_PCPTYPES,   /* the number of types on the pcp lists */
+    MIGRATE_RESERVE = MIGRATE_PCPTYPES,
+    MIGRATE_TYPES
+};
+
+不可移动页(Non-movable pages)：这类页在内存当中有固定的位置，不能移动。内核的核心分配的内存大多属于这种类型
+可回收页(Reclaimable pages)：这类页不能直接移动，但可以删除，其内容页可以从其他地方重新生成，例如，映射自文件的数据属于这种类型，针对这种页，内核有专门的页面回收处理
+可移动页:这类页可以随意移动，用户空间应用程序所用到的页属于该类别。它们通过页表来映射，如果他们复制到新的位置，页表项也会相应的更新，应用程序不会注意到任何改变。
+MIGRATE_PCPTYPES是per_cpu_pageset，即用来表示每CPU页框高速缓存的数据结构中的链表的迁移类型数目
+MIGRATE_RESERVE是在前三种的列表中都没用可满足分配的内存块时，就可以从MIGRATE_RESERVE分配
+MIGRATE_ISOLATE用于跨越NUMA节点移动物理内存页，在大型系统上，它有益于将物理内存页移动到接近于是用该页最频繁地CPU
+MIGRATE_TYPES表示迁移类型的数目
+
+当一个指定的迁移类型所对应的链表中没有空闲块时，将会按以下定义的顺序到其他迁移类型的链表中寻找
+/*
+ * This array describes the order lists are fallen back to when
+ * the free lists for the desirable migrate type are depleted
+ */
+static int fallbacks[MIGRATE_TYPES][4] = {
+    [MIGRATE_UNMOVABLE]   = { MIGRATE_RECLAIMABLE, MIGRATE_MOVABLE,     MIGRATE_RESERVE },
+    [MIGRATE_RECLAIMABLE] = { MIGRATE_UNMOVABLE,   MIGRATE_MOVABLE,     MIGRATE_RESERVE },
+    [MIGRATE_MOVABLE]     = { MIGRATE_RECLAIMABLE, MIGRATE_UNMOVABLE,   MIGRATE_RESERVE },
+};
+
+
+伙伴系统的初始化主要是初始化之前介绍的伙伴系统涉及到的数据结构，并且把系统初始化时由bootmem allocator管理的低端内存以及系统的高端内存释放到伙伴系统中去。其中有些和zone相关的域在前面<<Linux节点和内存管理区的初始化>>中已经有所介绍。
+ 在start_kernel()-->paging_init()-->zone_sizes_init()-->free_area_init_nodes()-->free_area_init_node()-->free_area_init_core()-->init_currently_empty_zone()-->zone_init_free_lists()
+
+start_kernel
+    mm_init
+        mem_init
+            /* this will put all low memory onto the freelists */
+            free_all_bootmem
+                list_for_each_entry -- free_all_bootmem_core
+                    __free_pages_bootmem
+                        __free_pages
+                            __free_pages_ok
+                                    migratetype = get_pageblock_migratetype(page);
+                                    set_freepage_migratetype(page, migratetype);
+                                    free_one_page(page_zone(page), page, order, migratetype);
+                                    
+用<<深入Linux内核架构>>上的一段话作为总结，“实际上，在启动期间分配可移动内存区的情况较少，那么分配器有很高的几率分配长度最大的内存区，并将其从可移动列表转换到不可移动列表。由于分配的内存区长度是最大的，因此不会向可移动内存中引入碎片。总而言之，这种做法避免了启动期间内核分配的内存(经常在系统的整个运行时间都不释放)散布到物理内存各处，从而使其他类型的内存分配免受碎片的干扰，这也是页可移动性分组框架的最重要目标之一”
+
+
+slab分配器 减少内碎片。
+slab分配对象时，会使用最近释放的对象内存块，因此其驻留在CPU高速缓存的概率较高。
+
+static struct kmem_cache_node __initdata init_kmem_cache_node[NUM_INIT_LISTS];
+
+start_kernel
+    mm_init
+        mem_init();
+        kmem_cache_init();
+            kmem_cache = &kmem_cache_boot;
+
+在满足以下两个条件时，slab分配器将为高速缓存创建新的slab
+1.请求分配对象，但本地高速缓存没有空闲对象可以分配，需要填充
+2.kmem_list3维护的链表中没有slab或者所有的slab都处于FULL链表中
+这时，调用cache_grow()创建slab增大缓存容量      
+
+
+销毁缓存首先要保证的一点就是缓存当中所有的对象都是空闲的，也就是之前分配出去的对象都已经释放回来了，其主要的步骤如下
+1.将缓存从cache_chain链表中删除
+2.将本地高速缓存、alien高速缓存和共享本地高速缓存中的对象都释放回slab并释放所有的free链表，然后判断full链表以及partial链表是否都为空，如果有一个不为空说明存在非空闲slab,也就是说有对象还未释放，此时无法销毁缓存，重新将缓存添加到cache_chain链表中
+3.确定所有的slab都为空闲状态后，将缓存涉及到的所有描述符都释放(这些描述符都是保存在普通高速缓存中的)
+负责销毁缓存的函数为kmem_cache_destroy()    
+
+Slab分配器 -- 复杂性和过多的管理数据造成的内存上的开销
+
+a)slab分配器为了增加分配速度，引入了一些管理数组，如slab管理区中的kmem_bufctl数组和紧随本地CPU结构后面的用来跟踪最热空闲对象的数组，这些结构虽然加快了分配对象的速度，但也增加了一定的复杂性，而且随着系统变得庞大，其对内存的开销也越明显。而slub分配器则完全摒弃了这些管理数据，个人觉得这也是slub分配器最精髓的地方，至于slub分配器的具体做法是怎样的，后面再做分析；
+b)slab分配器针对每个缓存，根据slab的状态划分了3个链表--full,partial和free. slub分配器做了简化，去掉了free链表，对于空闲的slab,slub分配器选择直接将其释放；
+c)slub分配器摒弃了slab分配器中的着色概念，在slab分配器中，由于颜色的个数有限，因此着色也无法完全解决slab之间的缓存行冲突问题，考虑到着色造成了内存上的浪费，slub分配器没有引入着色；
+d)在NUMA架构的支持上，slub分配器也较slab分配器做了简化。
+
+
+用户空间动态申请内存时往往只是获得一块线性地址的使用权，而并没有将这块线性地址区域与实际的物理内存对应上，只有当用户空间真正操作申请的内存时，才会触发一次缺页异常，这时内核才会分配实际的物理内存给用户空间。
+
+进程的虚拟内存空间会被分成不同的若干区域，每个区域都有其相关的属性和用途，一个合法的地址总是落在某个区域当中的，这些区域也不会重叠。在linux内核中，这样的区域被称之为虚拟内存区域(virtual memory areas),简称vma。一个vma就是一块连续的线性地址空间的抽象，它拥有自身的权限(可读，可写，可执行等等) ，每一个虚拟内存区域都由一个相关的struct vm_area_struct结构来描述
+
+进程的若干个vma区域都得按一定的形式组织在一起，这些vma都包含在进程的内存描述符中，也就是struct mm_struct中，这些vma在mm_struct以两种方式进行组织，一种是链表方式，对应于mm_struct中的mmap链表头，一种是红黑树方式，对应于mm_struct中的mm_rb根节点，和内核其他地方一样，链表用于遍历，红黑树用于查找。
+
+struct mm_struct {
+    struct vm_area_struct * mmap;       /* list of VMAs */
+    struct rb_root mm_rb;
+    struct vm_area_struct * mmap_cache; /* last find_vma result */
+    ...
+}   
+
+下面以文件映射为例，来阐述文件的address_space和与其建立映射关系的vma是如何联系上的
+
+struct address_space {
+    struct inode        *host;      /* owner: inode, block_device */
+    ...
+    struct rb_root      i_mmap;     /* tree of private and shared mappings */
+    struct list_head    i_mmap_nonlinear;/*list VM_NONLINEAR mappings */
+    ...
+} __attribute__((aligned(sizeof(long))));
+
+总之 struct vm_area_struct 是address_space和mm_struct的基本元素
+
+vma的基本操作函数
+find_vma()用来寻找一个针对于指定地址的vma，该vma要么包含了指定的地址，要么位于该地址之后并且离该地址最近，或者说寻找第一个满足addr<vma_end的vma
+vma_merge()函数在可能的情况下，将一个新区域与周边区域进行合并
+vma_adjust会执行具体的合并调整操作
+insert_vm_struct()函数用于插入一块新区域
+在创建新的vma区域之前先要寻找一块足够大小的空闲区域，该项工作由get_unmapped_area()函数完成，而实际的工作将会由mm_struct中定义的辅助函数来完成。根据进程虚拟地址空间的布局，会选择使用不同的映射函数，在这里考虑大多数系统上采用的标准函数arch_get_unmapped_area()
+
+linux缺页异常处理--内核空间
+缺页异常被触发通常有两种情况——
+1.程序设计的不当导致访问了非法的地址
+2.访问的地址是合法的，但是该地址还未分配物理页框
+
+缺页异常的来源可分为两种，一种是内核空间(访问了线性地址空间的第4个GB)，一种是用户空间(访问了线性地址空间的0~3GB)，以X86架构为例，先来看内核空间异常的处理。
+    //判断address是否处于内核线性地址空间 
+    //判断是否处于内核态  
+    //处理vmalloc异常  
+    vmalloc_fault   由于使用vmalloc申请内存时，内核只会更新主内核页表，所以当前使用的进程页表就有可能因为未与主内核页表同步导致这次异常的触发，因此该函数试图将address对应的页表项与主内核页表进行同步
+        /* 确定触发异常的地址是否处于VMALLOC区域*/  
+        pmd_k = vmalloc_sync_one(__va(pgd_paddr), address);//将当前使用的页表和内核页表同步  
+  /*异常发生在内核地址空间但不属于上面的情况或上面的方式无法修正， 
+      则检查相应的页表项是否存在，权限是否足够*/ 
+    如果do_page_fault()函数执行到了bad_area_nosemaphore()，那么就表明这次异常是由于对非法的地址访问造成的。在内核中产生这样的结果的情况一般有两种:
+    1.内核通过用户空间传递的系统调用参数，访问了无效的地址
+    2.内核的程序设计缺陷
+    第一种情况内核尚且能通过异常修正机制来进行修复，而第二种情况就会导致OOPS错误了，内核将强制用SIGKILL结束当前进程
+    bad_area_nosemaphore
+        __bad_area_nosemaphore
+            /* User mode accesses just cause a SIGSEGV */
+            force_sig_info_fault(SIGSEGV, si_code, address, tsk, 0);
+        no_context
+            fixup_exception
+            /* Oops. The kernel tried to access some bad page. We'll have to */
+            /* 走到这里就说明异常确实是由于内核的程序设计缺陷导致的了，内核将 
+            产生一个oops，下面的工作就是打印CPU寄存器和内核态堆栈的信息到控制台并 
+            终结当前的进程*/  
+            
+linux缺页异常处理--用户空间
+用户空间的缺页异常可以分为两种情况--
+1.触发异常的线性地址处于用户空间的vma中，但还未分配物理页，如果访问权限OK的话内核就给进程分配相应的物理页了
+2.触发异常的线性地址不处于用户空间的vma中，这种情况得判断是不是因为用户进程的栈空间消耗完而触发的缺页异常，如果是的话则在用户空间对栈区域进行扩展，并且分配相应的物理页，如果不是则作为一次非法地址访问来处理，内核将终结进程   
+
+ vma = find_vma(mm, address);//试图寻找到一个离address最近的vma，vma包含address或在address之后
+ /*没有找到这样的vma则说明address之后没有虚拟内存区域，因此该address肯定是无效的， 
+通过bad_area()路径来处理,bad_area()的主体就是__bad_area()-->bad_area_nosemaphore()*/  
+/*如果该地址包含在vma之中，则跳转到good_area处进行处理*/  
+/*不是前面两种情况的话，则判断是不是由于用户堆栈所占的页框已经使用完，而一个PUSH指令 
+引用了一个尚未和页框绑定的虚拟内存区域导致的一个异常，属于堆栈的虚拟内存区，其VM_GROWSDOWN位 
+被置位*/  
+/*这里检查address，只有该地址足够高(和堆栈指针的差不大于65536+32*sizeof(unsigned long)), 
+才能允许用户进程扩展它的堆栈地址空间，否则bad_area()处理*/  
+//堆栈扩展不成功同样由bad_area()处理  
+
+good_area:  
+    write = error_code & PF_WRITE;  
+    /*访问权限不够则通过bad_area_access_error()处理，该函数是对__bad_area()的封装，只不过 
+      发送给用户进程的信号为SEGV_ACCERR*/  
+    /*分配新的页表和页框*/  
+    handle_mm_fault
+        __handle_mm_fault
+            pgd_offset
+            pud_alloc
+            pmd_alloc
+            handle_pte_fault
+                do_linear_fault
+                do_anonymous_page
+                do_nonlinear_fault
+                do_swap_page
+                do_wp_page
+                
+static int handle_pte_fault(struct mm_struct *mm,
+             struct vm_area_struct *vma, unsigned long address,
+             pte_t *pte, pmd_t *pmd, unsigned int flags)
+{
+    pte_t entry;
+    spinlock_t *ptl;
+
+    entry = *pte;
+    if (!pte_present(entry)) {//如果页不在主存中  
+        if (pte_none(entry)) {//页表项内容为0，表明进程未访问过该页  
+            if (vma->vm_ops) { /*如果vm_ops字段和fault字段都不为空，则说明这是一个基于文件的映射*/  
+                if (likely(vma->vm_ops->fault))
+                    return do_linear_fault(mm, vma, address,
+                        pte, pmd, flags, entry);
+            }
+            /*否则分配匿名页*/  
+            return do_anonymous_page(mm, vma, address,
+                         pte, pmd, flags);
+        }
+        /*属于非线性文件映射且已被换出*/
+        if (pte_file(entry))
+            return do_nonlinear_fault(mm, vma, address,
+                    pte, pmd, flags, entry);
+        /*页不在主存中，但是页表项保存了相关信息，则表明该页被内核换出，则要进行换入操作*/ 
+        return do_swap_page(mm, vma, address,
+                    pte, pmd, flags, entry);
+    }
+
+    if (pte_numa(entry))
+        return do_numa_page(mm, vma, address, entry, pte, pmd);
+
+    /********页在主存中的情况***********/  
+    ptl = pte_lockptr(mm, pmd);
+    spin_lock(ptl);
+    if (unlikely(!pte_same(*pte, entry)))
+        goto unlock;
+    if (flags & FAULT_FLAG_WRITE) {//异常由写访问触发  
+        if (!pte_write(entry))//而对应的页是不可写的  
+            return do_wp_page(mm, vma, address,//此时必须进行写时复制的操作  
+                    pte, pmd, ptl, entry);
+    }
+    ...
+}
+                
+                
+do_linear_fault
+do_nonlinear_fault
+    __do_fault
+        alloc_page_vma
+        vma->vm_ops->fault(vma, &vmf);//调用定义好的fault函数，确保将所需的文件数据读入到映射页  
+        
+do_wp_page
+    old_page = vm_normal_page(vma, address, orig_pte);
+     /***************终于走到了不得已的一步了，下面只好进行COW了********************/  
+    page_cache_get(old_page);
+gotten:
+    pte_unmap_unlock(page_table, ptl);
+
+    if (unlikely(anon_vma_prepare(vma)))
+        goto oom;
+
+    if (is_zero_pfn(pte_pfn(orig_pte))) {
+        new_page = alloc_zeroed_user_highpage_movable(vma, address);//分配一个零页面  
+        if (!new_page)
+            goto oom;
+    } else {
+        new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);//分配一个非零页面
+        if (!new_page)
+            goto oom;
+        cow_user_page(new_page, old_page, address, vma);//将old_page中的数据拷贝到new_page  
+    }
+
