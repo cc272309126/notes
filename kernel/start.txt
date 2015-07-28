@@ -1,0 +1,45 @@
+start kernel
+
+start_kernel
+    ...
+    setup_arch
+    ...
+    rest_init
+        创建内核初始化线程init
+        创建kthreadd内核线程，它的作用是管理和调度其它内核线程
+        
+kernel_init它将完成设备驱动程序的初始化，启动用户空间的init进程
+kernel_init
+    kernel_init_freeable
+        smp_init
+        do_basic_setup
+        Open the /dev/console 
+        load_default_modules        
+    try_to_run_init_process 
+    
+do_basic_setup
+    cpuset_init_smp();
+    usermodehelper_init();
+    shmem_init();
+    driver_init();
+    init_irq_proc();
+    do_ctors();
+    usermodehelper_enable();
+    do_initcalls();
+    random_int_secret_init();
+
+driver_init
+    devtmpfs_init();
+    devices_init();
+    buses_init();
+    classes_init();
+    firmware_init();
+    hypervisor_init();
+    platform_bus_init();
+    cpu_dev_init();
+    memory_dev_init();
+    container_dev_init();   
+    
+do_initcalls
+
+
