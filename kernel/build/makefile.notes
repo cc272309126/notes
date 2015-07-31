@@ -1,0 +1,520 @@
+
+linux 3.18.6
+
+make defconfig
+
+%config: scripts_basic outputmakefile FORCE
+	$(Q)$(MAKE) $(build)=scripts/kconfig $@
+
+
+# makefile (from `scripts/Kbuild.include', line 174)
+build := -f ./scripts/Makefile.build obj
+
+
+scripts_basic:
+	$(Q)$(MAKE) $(build)=scripts/basic
+	$(Q)rm -f .tmp_quiet_recordmcount
+
+outputmakefile:
+
+FORCE:
+
+
+make -f ./scripts/Makefile.build obj=scripts/kconfig defconfig
+*** Default configuration is based on 'x86_64_defconfig'
+scripts/kconfig/conf --defconfig=arch/x86/configs/x86_64_defconfig Kconfig
+
+scripts/kconfig/Makefile
+
+defconfig: $(obj)/conf
+ifeq ($(KBUILD_DEFCONFIG),)
+	$< --defconfig $(Kconfig)
+else
+	@echo "*** Default configuration is based on '$(KBUILD_DEFCONFIG)'"
+	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG) $(Kconfig)
+endif
+
+%_defconfig: $(obj)/conf
+	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/$@ $(Kconfig)
+
+
+# If building an external module we do not care about the all: rule
+# but instead _all depend on modules
+ifeq ($(KBUILD_EXTMOD),)
+_all: all
+else
+_all: modules
+endif
+
+# The all: target is the default when no target is given on the
+# command line.
+all: vmlinux
+
+# Include targets which we want to
+# execute if the rest of the kernel build went well.
+vmlinux: scripts/link-vmlinux.sh $(vmlinux-deps) FORCE
+ifdef CONFIG_HEADERS_CHECK
+	$(Q)$(MAKE) -f $(srctree)/Makefile headers_check
+endif
+ifdef CONFIG_SAMPLES
+	$(Q)$(MAKE) $(build)=samples
+endif
+ifdef CONFIG_BUILD_DOCSRC
+	$(Q)$(MAKE) $(build)=Documentation
+endif
+	+$(call if_changed,link-vmlinux)
+
+
+scripts/link-vmlinux.sh:
+  /bin/bash scripts/link-vmlinux.sh ld -m elf_x86_64 --build-id
+
++ info LD vmlinux.o
+  LD      vmlinux.o
++ modpost_link vmlinux.o
++ ld -m elf_x86_64 -r -o vmlinux.o arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group
++ make -f ./scripts/Makefile.modpost vmlinux.o
+  scripts/mod/modpost   -o ./Module.symvers    -S  vmlinux.o
++ info GEN .version
+  GEN     .version
++ mv .version .old_version
++ make -f ./scripts/Makefile.build obj=init
+/bin/bash ./scripts/mkcompile_h include/generated/compile.h \
+	"x86_64" "y" "" "gcc -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -std=gnu89 -m64 -mno-80387 -mno-fp-ret-in-387  -mtune=generic -mno-red-zone -mcmodel=kernel -funit-at-a-time -maccumulate-outgoing-args -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx  -fno-delete-null-pointer-checks -O2 --param=allow-store-data-races=0 -Wframe-larger-than=2048  -fno-stack-protector -Wno-unused-but-set-variable -fno-omit-frame-pointer -fno-optimize-sibling-calls  -fno-var-tracking-assignments -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fconserve-stack -Werror=implicit-int -Werror=strict-prototypes  -DCC_HAVE_ASM_GOTO "
+  UPD     include/generated/compile.h
+  gcc -Wp,-MD,init/.version.o.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -std=gnu89 -m64 -mno-80387 -mno-fp-ret-in-387 -mtune=generic -mno-red-zone -mcmodel=kernel -funit-at-a-time -maccumulate-outgoing-args -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx -fno-delete-null-pointer-checks -O2 --param=allow-store-data-races=0 -Wframe-larger-than=2048 -fno-stack-protector -Wno-unused-but-set-variable -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-var-tracking-assignments -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fconserve-stack -Werror=implicit-int -Werror=strict-prototypes -DCC_HAVE_ASM_GOTO    -D"KBUILD_STR(s)=#s" -D"KBUILD_BASENAME=KBUILD_STR(version)"  -D"KBUILD_MODNAME=KBUILD_STR(version)" -c -o init/version.o init/version.c
+   ld -m elf_x86_64   -r -o init/built-in.o init/main.o init/version.o init/mounts.o init/initramfs.o init/calibrate.o init/init_task.o 
+(cat /dev/null; ) > init/modules.order
++ ld -m elf_x86_64 --build-id -o .tmp_vmlinux1 -T ./arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group
++ info KSYM .tmp_kallsyms1.o
+  KSYM    .tmp_kallsyms1.o
++ gcc -D__ASSEMBLY__ -m64 -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -c -o .tmp_kallsyms1.o -x assembler-with-cpp -
++ vmlinux_link .tmp_kallsyms1.o .tmp_vmlinux2
++ local lds=./arch/x86/kernel/vmlinux.lds
++ ld -m elf_x86_64 --build-id -o .tmp_vmlinux2 -T ./arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group .tmp_kallsyms1.o
++ info KSYM .tmp_kallsyms2.o
+  KSYM    .tmp_kallsyms2.o
++ local 'aflags=-D__ASSEMBLY__ -m64 -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1                  		       -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ '
++ nm -n .tmp_vmlinux2
++ gcc -D__ASSEMBLY__ -m64 -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -c -o .tmp_kallsyms2.o -x assembler-with-cpp -
++ info LD vmlinux
+  LD      vmlinux
++ ld -m elf_x86_64 --build-id -o vmlinux -T ./arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group .tmp_kallsyms2.o
++ info SORTEX vmlinux
+  SORTEX  vmlinux
++ ./scripts/sortextable vmlinux
++ info SYSMAP System.map
+  SYSMAP  System.map
++ mksysmap vmlinux System.map
++ /bin/bash ./scripts/mksysmap vmlinux System.map
++ mksysmap .tmp_vmlinux2 .tmp_System.map
++ /bin/bash ./scripts/mksysmap .tmp_vmlinux2 .tmp_System.map
++ cmp -s System.map .tmp_System.map
++ rm -f .old_version
+
+
+vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_INIT) $(KBUILD_VMLINUX_MAIN)
+vmlinux-deps := arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o  init/built-in.o  usr/built-in.o  arch/x86/built-in.o  kernel/built-in.o  mm/built-in.o  fs/built-in.o  ipc/built-in.o  security/built-in.o  crypto/built-in.o  block/built-in.o  lib/lib.a  arch/x86/lib/lib.a  lib/built-in.o  arch/x86/lib/built-in.o  drivers/built-in.o  sound/built-in.o  firmware/built-in.o  arch/x86/pci/built-in.o  arch/x86/power/built-in.o  arch/x86/video/built-in.o  net/built-in.o
+
+
+export KBUILD_LDS          := arch/$(SRCARCH)/kernel/vmlinux.lds
+export KBUILD_VMLINUX_INIT := $(head-y) $(init-y)
+export KBUILD_VMLINUX_MAIN := $(core-y) $(libs-y) $(drivers-y) $(net-y)
+
+arch/x86/kernel/vmlinux.lds: init usr arch/x86 kernel mm fs ipc security crypto block drivers sound firmware arch/x86/pci arch/x86/power arch/x86/video net lib arch/x86/lib
+
+
+
+# Objects we will link into vmlinux / subdirs we need to visit
+init-y		:= init/
+drivers-y	:= drivers/ sound/ firmware/
+net-y		:= net/
+libs-y		:= lib/
+core-y		:= usr/
+
+init-y		:= $(patsubst %/, %/built-in.o, $(init-y))
+core-y		:= $(patsubst %/, %/built-in.o, $(core-y))
+drivers-y	:= $(patsubst %/, %/built-in.o, $(drivers-y))
+net-y		:= $(patsubst %/, %/built-in.o, $(net-y))
+libs-y1		:= $(patsubst %/, %/lib.a, $(libs-y))
+libs-y2		:= $(patsubst %/, %/built-in.o, $(libs-y))
+libs-y		:= $(libs-y1) $(libs-y2)
+
+
+arch/x86/Makefile
+{{{
+# Kernel objects
+
+head-y := arch/x86/kernel/head_$(BITS).o
+head-y += arch/x86/kernel/head$(BITS).o
+head-y += arch/x86/kernel/head.o
+
+libs-y  += arch/x86/lib/
+
+# See arch/x86/Kbuild for content of core part of the kernel
+core-y += arch/x86/
+
+# drivers-y are linked after core-y
+drivers-$(CONFIG_MATH_EMULATION) += arch/x86/math-emu/
+drivers-$(CONFIG_PCI)            += arch/x86/pci/
+
+# must be linked after kernel/
+drivers-$(CONFIG_OPROFILE) += arch/x86/oprofile/
+
+# suspend and hibernation support
+drivers-$(CONFIG_PM) += arch/x86/power/
+
+drivers-$(CONFIG_FB) += arch/x86/video/
+}}}
+
+
+
+
+arch/x86/kernel/head_64.o: arch/x86/kernel/head_64.S FORCE
+$(obj)/%.o: $(src)/%.S FORCE
+	$(call if_changed_dep,as_o_S)
+
+  gcc -Wp,-MD,arch/x86/kernel/.head_64.o.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__  -D__ASSEMBLY__ -m64 -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1           -c -o arch/x86/kernel/head_64.o arch/x86/kernel/head_64.S
+
+
+# makefile (from `scripts/Kbuild.include', line 238)
+if_changed_dep = $(if $(strip $(any-prereq) $(arg-check) ), @set -e; $(echo-cmd) $(cmd_$(1)); scripts/basic/fixdep $(depfile) $@ '$(make-cmd)' > $(dot-target).tmp; rm -f $(depfile); mv -f $(dot-target).tmp $(dot-target).cmd)
+
+
+# Execute command if command has changed or prerequisite(s) are updated.
+#
+if_changed = $(if $(strip $(any-prereq) $(arg-check)),                       \
+	@set -e;                                                             \
+	$(echo-cmd) $(cmd_$(1));                                             \
+	printf '%s\n' 'cmd_$@ := $(make-cmd)' > $(dot-target).cmd)
+
+# Execute the command and also postprocess generated .d dependencies file.
+if_changed_dep = $(if $(strip $(any-prereq) $(arg-check) ),                  \
+	@set -e;                                                             \
+	$(echo-cmd) $(cmd_$(1));                                             \
+	scripts/basic/fixdep $(depfile) $@ '$(make-cmd)' > $(dot-target).tmp;\
+	rm -f $(depfile);                                                    \
+	mv -f $(dot-target).tmp $(dot-target).cmd)
+
+
+echo-cmd = $(if $($(quiet)cmd_$(1)), echo '  $(call escsq,$($(quiet)cmd_$(1)))$(echo-why)';)
+
+# makefile (from `./scripts/Makefile.build', line 289)
+quiet_cmd_as_o_S = AS $(quiet_modtag)  $@
+# makefile (from `./scripts/Makefile.build', line 290)
+cmd_as_o_S = $(CC) $(a_flags) -c -o $@ $<
+
+# makefile (from `scripts/Makefile.lib', line 144)
+a_flags = -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(LINUXINCLUDE) $(__a_flags) $(modkern_aflags)
+
+c_flags        = -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(LINUXINCLUDE)     \
+		 $(__c_flags) $(modkern_cflags)                           \
+		 -D"KBUILD_STR(s)=\#s" $(basename_flags) $(modname_flags)
+
+a_flags        = -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(LINUXINCLUDE)     \
+		 $(__a_flags) $(modkern_aflags)
+
+cpp_flags      = -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(LINUXINCLUDE)     \
+		 $(__cpp_flags)
+
+ld_flags       = $(LDFLAGS) $(ldflags-y)
+
+arch/x86/kernel/head.o: arch/x86/kernel/head.c FORCE
+#  commands to execute (from `./scripts/Makefile.build', line 257):
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+	
+  gcc -Wp,-MD,arch/x86/kernel/.head.o.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -std=gnu89 -m64 -mno-80387 -mno-fp-ret-in-387 -mtune=generic -mno-red-zone -mcmodel=kernel -funit-at-a-time -maccumulate-outgoing-args -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx -fno-delete-null-pointer-checks -O2 --param=allow-store-data-races=0 -Wframe-larger-than=2048 -fno-stack-protector -Wno-unused-but-set-variable -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-var-tracking-assignments -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fconserve-stack -Werror=implicit-int -Werror=strict-prototypes -DCC_HAVE_ASM_GOTO    -D"KBUILD_STR(s)=#s" -D"KBUILD_BASENAME=KBUILD_STR(head)"  -D"KBUILD_MODNAME=KBUILD_STR(head)" -c -o arch/x86/kernel/head.o arch/x86/kernel/head.c
+
+
+
+# Find any prerequisites that is newer than target or that does not exist.
+# PHONY targets skipped in both cases.
+any-prereq = $(filter-out $(PHONY),$?) $(filter-out $(PHONY) $(wildcard $^),$^)
+
+
+# if_changed      - execute command if any prerequisite is newer than
+#                   target, or command line has changed
+# if_changed_dep  - as if_changed, but uses fixdep to reveal dependencies
+#                   including used config symbols
+# if_changed_rule - as if_changed but execute rule instead
+
+
+# Usage: $(call if_changed_rule,foo)
+# Will check if $(cmd_foo) or any of the prerequisites changed,
+# and if so will execute $(rule_foo).
+if_changed_rule = $(if $(strip $(any-prereq) $(arg-check) ),                 \
+	@set -e;                                                             \
+	$(rule_$(1)))
+
+define rule_cc_o_c
+	$(call echo-cmd,checksrc) $(cmd_checksrc)			  \
+	$(call echo-cmd,cc_o_c) $(cmd_cc_o_c);				  \
+	$(cmd_modversions)						  \
+	$(call echo-cmd,record_mcount)					  \
+	$(cmd_record_mcount)						  \
+	scripts/basic/fixdep $(depfile) $@ '$(call make-cmd,cc_o_c)' >    \
+	                                              $(dot-target).tmp;  \
+	rm -f $(depfile);						  \
+	mv -f $(dot-target).tmp $(dot-target).cmd
+endef
+
+
+
+
+   ld -m elf_x86_64   -r -o arch/x86/kernel/built-in.o arch/x86/kernel/process_64.o arch/x86/kernel/signal.o arch/x86/kernel/entry_64.o arch/x86/kernel/traps.o arch/x86/kernel/irq.o arch/x86/kernel/irq_64.o arch/x86/kernel/dumpstack_64.o arch/x86/kernel/time.o arch/x86/kernel/ioport.o arch/x86/kernel/ldt.o arch/x86/kernel/dumpstack.o arch/x86/kernel/nmi.o arch/x86/kernel/setup.o arch/x86/kernel/x86_init.o arch/x86/kernel/i8259.o arch/x86/kernel/irqinit.o arch/x86/kernel/jump_label.o arch/x86/kernel/irq_work.o arch/x86/kernel/probe_roms.o arch/x86/kernel/sys_x86_64.o arch/x86/kernel/x8664_ksyms_64.o arch/x86/kernel/mcount_64.o arch/x86/kernel/syscall_64.o arch/x86/kernel/vsyscall_gtod.o arch/x86/kernel/vsyscall_64.o arch/x86/kernel/vsyscall_emu_64.o arch/x86/kernel/espfix_64.o arch/x86/kernel/ksysfs.o arch/x86/kernel/bootflag.o arch/x86/kernel/e820.o arch/x86/kernel/pci-dma.o arch/x86/kernel/quirks.o arch/x86/kernel/topology.o arch/x86/kernel/kdebugfs.o arch/x86/kernel/alternative.o arch/x86/kernel/i8253.o arch/x86/kernel/pci-nommu.o arch/x86/kernel/hw_breakpoint.o arch/x86/kernel/tsc.o arch/x86/kernel/tsc_msr.o arch/x86/kernel/io_delay.o arch/x86/kernel/rtc.o arch/x86/kernel/pci-iommu_table.o arch/x86/kernel/resource.o arch/x86/kernel/process.o arch/x86/kernel/i387.o arch/x86/kernel/xsave.o arch/x86/kernel/ptrace.o arch/x86/kernel/tls.o arch/x86/kernel/step.o arch/x86/kernel/i8237.o arch/x86/kernel/stacktrace.o arch/x86/kernel/cpu/built-in.o arch/x86/kernel/acpi/built-in.o arch/x86/kernel/reboot.o arch/x86/kernel/msr.o arch/x86/kernel/cpuid.o arch/x86/kernel/early-quirks.o arch/x86/kernel/smp.o arch/x86/kernel/smpboot.o arch/x86/kernel/tsc_sync.o arch/x86/kernel/setup_percpu.o arch/x86/kernel/mpparse.o arch/x86/kernel/apic/built-in.o arch/x86/kernel/trace_clock.o arch/x86/kernel/machine_kexec_64.o arch/x86/kernel/relocate_kernel_64.o arch/x86/kernel/crash.o arch/x86/kernel/crash_dump_64.o arch/x86/kernel/kprobes/built-in.o arch/x86/kernel/module.o arch/x86/kernel/doublefault.o arch/x86/kernel/early_printk.o arch/x86/kernel/hpet.o arch/x86/kernel/amd_nb.o arch/x86/kernel/pcspeaker.o arch/x86/kernel/check.o arch/x86/kernel/pci-swiotlb.o arch/x86/kernel/sysfb.o arch/x86/kernel/sysfb_efi.o arch/x86/kernel/perf_regs.o arch/x86/kernel/tracepoint.o arch/x86/kernel/pmc_atom.o arch/x86/kernel/audit_64.o arch/x86/kernel/pci-calgary_64.o arch/x86/kernel/tce_64.o arch/x86/kernel/mmconf-fam10h_64.o arch/x86/kernel/vsmp_64.o 
+
+
+
+
+kernel/built-in.o: kernel/fork.o kernel/exec_domain.o kernel/panic.o kernel/cpu.o kernel/exit.o kernel/softirq.o kernel/resource.o kernel/sysctl.o kernel/sysctl_binary.o kernel/capability.o kernel/ptrace.o kernel/user.o kernel/signal.o kernel/sys.o kernel/kmod.o kernel/workqueue.o kernel/pid.o kernel/task_work.o kernel/extable.o kernel/params.o kernel/kthread.o kernel/sys_ni.o kernel/nsproxy.o kernel/notifier.o kernel/ksysfs.o kernel/cred.o kernel/reboot.o kernel/async.o kernel/range.o kernel/groups.o kernel/smpboot.o kernel/sched/built-in.o kernel/locking/built-in.o kernel/power/built-in.o kernel/printk/built-in.o kernel/irq/built-in.o kernel/rcu/built-in.o kernel/freezer.o kernel/profile.o kernel/stacktrace.o kernel/time/built-in.o kernel/futex.o kernel/futex_compat.o kernel/dma.o kernel/smp.o kernel/uid16.o kernel/module.o kernel/kallsyms.o kernel/acct.o kernel/kexec.o kernel/compat.o kernel/cgroup.o kernel/cgroup_freezer.o kernel/cpuset.o kernel/utsname.o kernel/pid_namespace.o kernel/res_counter.o kernel/stop_machine.o kernel/audit.o kernel/auditfilter.o kernel/auditsc.o kernel/audit_watch.o kernel/audit_tree.o kernel/kprobes.o kernel/seccomp.o kernel/relay.o kernel/utsname_sysctl.o kernel/delayacct.o kernel/taskstats.o kernel/tsacct.o kernel/tracepoint.o kernel/elfcore.o kernel/trace/built-in.o kernel/irq_work.o kernel/bpf/built-in.o kernel/events/built-in.o kernel/crash_dump.o FORCE
+#  commands to execute (from `./scripts/Makefile.build', line 336):
+	$(call if_changed,link_o_target)
+
+
+obj-y		:= $(addprefix $(obj)/,$(obj-y))
+obj-y := kernel/fork.o kernel/exec_domain.o kernel/panic.o kernel/cpu.o kernel/exit.o kernel/softirq.o kernel/resource.o kernel/sysctl.o kernel/sysctl_binary.o kernel/capability.o kernel/ptrace.o kernel/user.o kernel/signal.o kernel/sys.o kernel/kmod.o kernel/workqueue.o kernel/pid.o kernel/task_work.o kernel/extable.o kernel/params.o kernel/kthread.o kernel/sys_ni.o kernel/nsproxy.o kernel/notifier.o kernel/ksysfs.o kernel/cred.o kernel/reboot.o kernel/async.o kernel/range.o kernel/groups.o kernel/smpboot.o kernel/sched/built-in.o kernel/locking/built-in.o kernel/power/built-in.o kernel/printk/built-in.o kernel/irq/built-in.o kernel/rcu/built-in.o kernel/freezer.o kernel/profile.o kernel/stacktrace.o kernel/time/built-in.o kernel/futex.o kernel/futex_compat.o kernel/dma.o kernel/smp.o kernel/uid16.o kernel/module.o kernel/kallsyms.o kernel/acct.o kernel/kexec.o kernel/compat.o kernel/cgroup.o kernel/cgroup_freezer.o kernel/cpuset.o kernel/utsname.o kernel/pid_namespace.o kernel/res_counter.o kernel/stop_machine.o kernel/audit.o kernel/auditfilter.o kernel/auditsc.o kernel/audit_watch.o kernel/audit_tree.o kernel/kprobes.o kernel/seccomp.o kernel/relay.o kernel/utsname_sysctl.o kernel/delayacct.o kernel/taskstats.o kernel/tsacct.o kernel/tracepoint.o kernel/elfcore.o kernel/elfcore.o kernel/trace/built-in.o kernel/trace/built-in.o kernel/trace/built-in.o kernel/trace/built-in.o kernel/irq_work.o kernel/bpf/built-in.o kernel/events/built-in.o kernel/crash_dump.o
+
+
+obj-y     = fork.o exec_domain.o panic.o \
+	    cpu.o exit.o softirq.o resource.o \
+	    sysctl.o sysctl_binary.o capability.o ptrace.o user.o \
+	    signal.o sys.o kmod.o workqueue.o pid.o task_work.o \
+	    extable.o params.o \
+	    kthread.o sys_ni.o nsproxy.o \
+	    notifier.o ksysfs.o cred.o reboot.o \
+	    async.o range.o groups.o smpboot.o
+
+obj-y += sched/
+obj-y += locking/
+obj-y += power/
+obj-y += printk/
+obj-y += irq/
+obj-y += rcu/
+
+obj-$(CONFIG_CHECKPOINT_RESTORE) += kcmp.o
+obj-$(CONFIG_FREEZER) += freezer.o
+obj-$(CONFIG_PROFILING) += profile.o
+obj-$(CONFIG_STACKTRACE) += stacktrace.o
+obj-y += time/
+
+
+
+ifneq ($(strip $(obj-y) $(obj-m) $(obj-) $(subdir-m) $(lib-target)),)
+builtin-target := $(obj)/built-in.o
+endif
+
+
+make -f ./scripts/Makefile.build obj=kernel
+make -f ./scripts/Makefile.build obj=kernel/events
+
+Reading makefiles...
+Reading makefile `./scripts/Makefile.build'...
+Reading makefile `include/config/auto.conf' (search path) (don't care) (no ~ expansion)...
+Reading makefile `scripts/Kbuild.include' (search path) (no ~ expansion)...
+Reading makefile `kernel/bpf/Makefile' (search path) (no ~ expansion)...
+Reading makefile `scripts/Makefile.lib' (search path) (no ~ expansion)...
+Updating goal targets....
+Considering target file `__build'.
+ File `__build' does not exist.
+  Considering target file `kernel/bpf/built-in.o'.
+   File `kernel/bpf/built-in.o' does not exist.
+    Considering target file `kernel/bpf/core.o'.
+     File `kernel/bpf/core.o' does not exist.
+      Considering target file `kernel/bpf/core.c'.
+       Finished prerequisites of target file `kernel/bpf/core.c'.
+      No need to remake target `kernel/bpf/core.c'.
+      Considering target file `FORCE'.
+       File `FORCE' does not exist.
+       Finished prerequisites of target file `FORCE'.
+      Must remake target `FORCE'.
+      Successfully remade target file `FORCE'.
+     Finished prerequisites of target file `kernel/bpf/core.o'.
+    Must remake target `kernel/bpf/core.o'.
+  CC      kernel/bpf/core.o
+    Successfully remade target file `kernel/bpf/core.o'.
+    Pruning file `FORCE'.
+   Finished prerequisites of target file `kernel/bpf/built-in.o'.
+  Must remake target `kernel/bpf/built-in.o'.
+  LD      kernel/bpf/built-in.o
+  Successfully remade target file `kernel/bpf/built-in.o'.
+  Considering target file `kernel/bpf/modules.order'.
+   File `kernel/bpf/modules.order' does not exist.
+    Pruning file `FORCE'.
+   Finished prerequisites of target file `kernel/bpf/modules.order'.
+  Must remake target `kernel/bpf/modules.order'.
+  Successfully remade target file `kernel/bpf/modules.order'.
+ Finished prerequisites of target file `__build'.
+Must remake target `__build'.
+Successfully remade target file `__build'.
+      Successfully remade target file `kernel/bpf'.
+
+
+
+
+
+
+
+      Considering target file `kernel/events'.
+       File `kernel/events' does not exist.
+       Finished prerequisites of target file `kernel/events'.
+      Must remake target `kernel/events'.
+GNU Make 3.81
+Copyright (C) 2006  Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+
+This program built for x86_64-pc-linux-gnu
+Reading makefiles...
+Reading makefile `./scripts/Makefile.build'...
+Reading makefile `include/config/auto.conf' (search path) (don't care) (no ~ expansion)...
+Reading makefile `scripts/Kbuild.include' (search path) (no ~ expansion)...
+Reading makefile `kernel/events/Makefile' (search path) (no ~ expansion)...
+Reading makefile `scripts/Makefile.lib' (search path) (no ~ expansion)...
+Updating goal targets....
+Considering target file `__build'.
+ File `__build' does not exist.
+  Considering target file `kernel/events/built-in.o'.
+   File `kernel/events/built-in.o' does not exist.
+    Considering target file `kernel/events/core.o'.
+     File `kernel/events/core.o' does not exist.
+      Considering target file `kernel/events/core.c'.
+       Finished prerequisites of target file `kernel/events/core.c'.
+      No need to remake target `kernel/events/core.c'.
+      Considering target file `FORCE'.
+       File `FORCE' does not exist.
+       Finished prerequisites of target file `FORCE'.
+      Must remake target `FORCE'.
+      Successfully remade target file `FORCE'.
+     Finished prerequisites of target file `kernel/events/core.o'.
+    Must remake target `kernel/events/core.o'.
+  CC      kernel/events/core.o
+    Successfully remade target file `kernel/events/core.o'.
+    Considering target file `kernel/events/ring_buffer.o'.
+     File `kernel/events/ring_buffer.o' does not exist.
+      Considering target file `kernel/events/ring_buffer.c'.
+       Finished prerequisites of target file `kernel/events/ring_buffer.c'.
+      No need to remake target `kernel/events/ring_buffer.c'.
+      Pruning file `FORCE'.
+     Finished prerequisites of target file `kernel/events/ring_buffer.o'.
+    Must remake target `kernel/events/ring_buffer.o'.
+  CC      kernel/events/ring_buffer.o
+    Successfully remade target file `kernel/events/ring_buffer.o'.
+    Considering target file `kernel/events/callchain.o'.
+     File `kernel/events/callchain.o' does not exist.
+      Considering target file `kernel/events/callchain.c'.
+       Finished prerequisites of target file `kernel/events/callchain.c'.
+      No need to remake target `kernel/events/callchain.c'.
+      Pruning file `FORCE'.
+     Finished prerequisites of target file `kernel/events/callchain.o'.
+    Must remake target `kernel/events/callchain.o'.
+  CC      kernel/events/callchain.o
+    Successfully remade target file `kernel/events/callchain.o'.
+    Considering target file `kernel/events/hw_breakpoint.o'.
+     File `kernel/events/hw_breakpoint.o' does not exist.
+      Considering target file `kernel/events/hw_breakpoint.c'.
+       Finished prerequisites of target file `kernel/events/hw_breakpoint.c'.
+      No need to remake target `kernel/events/hw_breakpoint.c'.
+      Pruning file `FORCE'.
+     Finished prerequisites of target file `kernel/events/hw_breakpoint.o'.
+    Must remake target `kernel/events/hw_breakpoint.o'.
+  CC      kernel/events/hw_breakpoint.o
+    Successfully remade target file `kernel/events/hw_breakpoint.o'.
+    Pruning file `FORCE'.
+   Finished prerequisites of target file `kernel/events/built-in.o'.
+  Must remake target `kernel/events/built-in.o'.
+  LD      kernel/events/built-in.o
+  Successfully remade target file `kernel/events/built-in.o'.
+  Considering target file `kernel/events/modules.order'.
+   File `kernel/events/modules.order' does not exist.
+    Pruning file `FORCE'.
+   Finished prerequisites of target file `kernel/events/modules.order'.
+  Must remake target `kernel/events/modules.order'.
+  Successfully remade target file `kernel/events/modules.order'.
+ Finished prerequisites of target file `__build'.
+Must remake target `__build'.
+Successfully remade target file `__build'.
+      Successfully remade target file `kernel/events'.
+
+
+
+
+
+__build: kernel/bpf/built-in.o kernel/bpf/modules.order
+#  commands to execute (from `./scripts/Makefile.build', line 97):
+	@:
+
+# We keep a list of all modules in $(MODVERDIR)
+__build: $(if $(KBUILD_BUILTIN),$(builtin-target) $(lib-target) $(extra-y)) \
+	 $(if $(KBUILD_MODULES),$(obj-m) $(modorder-target)) \
+	 $(subdir-ym) $(always)
+	@:
+
+
+kernel/bpf/built-in.o: kernel/bpf/core.o FORCE
+#  commands to execute (from `./scripts/Makefile.build', line 336):
+	$(call if_changed,link_o_target)
+
+
+kernel/bpf/core.o: kernel/bpf/core.c FORCE
+#  commands to execute (from `./scripts/Makefile.build', line 257):
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+	
+make -f ./scripts/Makefile.build obj=kernel/bpf
+  gcc -Wp,-MD,kernel/bpf/.core.o.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -std=gnu89 -m64 -mno-80387 -mno-fp-ret-in-387 -mtune=generic -mno-red-zone -mcmodel=kernel -funit-at-a-time -maccumulate-outgoing-args -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx -fno-delete-null-pointer-checks -O2 --param=allow-store-data-races=0 -Wframe-larger-than=2048 -fno-stack-protector -Wno-unused-but-set-variable -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-var-tracking-assignments -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fconserve-stack -Werror=implicit-int -Werror=strict-prototypes -DCC_HAVE_ASM_GOTO    -D"KBUILD_STR(s)=#s" -D"KBUILD_BASENAME=KBUILD_STR(core)"  -D"KBUILD_MODNAME=KBUILD_STR(core)" -c -o kernel/bpf/core.o kernel/bpf/core.c
+   ld -m elf_x86_64   -r -o kernel/bpf/built-in.o kernel/bpf/core.o 
+(cat /dev/null; ) > kernel/bpf/modules.order
+
+
+# makefile (from `./scripts/Makefile.build', line 330)
+cmd_link_o_target = $(if $(strip $(obj-y)), $(LD) $(ld_flags) -r -o $@ $(filter $(obj-y), $^) $(cmd_secanalysis), rm -f $@; $(AR) rcs$(KBUILD_ARFLAGS) $@)
+#
+# Rule to compile a set of .o files into one .o file
+#
+ifdef builtin-target
+quiet_cmd_link_o_target = LD      $@
+# If the list of objects to link is empty, just create an empty built-in.o
+cmd_link_o_target = $(if $(strip $(obj-y)),\
+		      $(LD) $(ld_flags) -r -o $@ $(filter $(obj-y), $^) \
+		      $(cmd_secanalysis),\
+		      rm -f $@; $(AR) rcs$(KBUILD_ARFLAGS) $@)
+
+$(builtin-target): $(obj-y) FORCE
+	$(call if_changed,link_o_target)
+
+targets += $(builtin-target)
+endif # builtin-target
+
+
+__subdir-y	:= $(patsubst %/,%,$(filter %/, $(obj-y)))
+subdir-y	+= $(__subdir-y)
+__subdir-m	:= $(patsubst %/,%,$(filter %/, $(obj-m)))
+subdir-m	+= $(__subdir-m)
+obj-y		:= $(patsubst %/, %/built-in.o, $(obj-y))
+obj-m		:= $(filter-out %/, $(obj-m))
+# Subdirectories we need to descend into
+subdir-ym	:= $(sort $(subdir-y) $(subdir-m))
+# Descending
+# ---------------------------------------------------------------------------
+PHONY += $(subdir-ym)
+$(subdir-ym):
+	$(Q)$(MAKE) $(build)=$@
+
+
+obj-y		:= $(patsubst %/, %/built-in.o, $(obj-y))
+
+# $(subdir-obj-y) is the list of objects in $(obj-y) which uses dir/ to
+# tell kbuild to descend
+subdir-obj-y := $(filter %/built-in.o, $(obj-y))
+
+subdir-obj-y := kernel/sched/built-in.o kernel/locking/built-in.o kernel/power/built-in.o kernel/printk/built-in.o kernel/irq/built-in.o kernel/rcu/built-in.o kernel/time/built-in.o kernel/trace/built-in.o kernel/trace/built-in.o kernel/trace/built-in.o kernel/trace/built-in.o kernel/bpf/built-in.o kernel/events/built-in.o
+
+
+
+
+
+
+
+
+
