@@ -1,6 +1,4 @@
-
 linux 3.18.6
-
 make defconfig
 
 %config: scripts_basic outputmakefile FORCE
@@ -516,5 +514,119 @@ subdir-obj-y := kernel/sched/built-in.o kernel/locking/built-in.o kernel/power/b
 
 
 
+depends
+
+
+_all: all
+all: vmlinux
+vmlinux: scripts/link-vmlinux.sh $(vmlinux-deps) FORCE
+vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_INIT) $(KBUILD_VMLINUX_MAIN)
+export KBUILD_VMLINUX_MAIN := $(core-y) $(libs-y) $(drivers-y) $(net-y)
+core-y		:= usr/
+core-y		+= kernel/ mm/ fs/ ipc/ security/ crypto/ block/
+core-y += arch/x86/
+core-y		:= $(patsubst %/, %/built-in.o, $(core-y))
+core-y :=  usr/built-in.o  arch/x86/built-in.o  kernel/built-in.o  mm/built-in.o  fs/built-in.o  ipc/built-in.o  security/built-in.o  crypto/built-in.o  block/built-in.o
+
+
+
+vmlinux-dirs	:= $(patsubst %/,%,$(filter %/, $(init-y) $(init-m) \
+		     $(core-y) $(core-m) $(drivers-y) $(drivers-m) \
+		     $(net-y) $(net-m) $(libs-y) $(libs-m)))
+$(vmlinux-dirs): prepare scripts
+	$(Q)$(MAKE) $(build)=$@
+make -f ./scripts/Makefile.build obj=kernel
+
+# enter the directory kernel -- depend the directory 
+# build the image kernel/built-in.o -- built-in.o recipe 
+
+kernel/built-in.o:
+
+builtin-target := $(obj)/built-in.o
+$(builtin-target): $(obj-y) FORCE
+	$(call if_changed,link_o_target)
+
+obj-y     = fork.o exec_domain.o panic.o ...
+obj-y += sched/ ...
+obj-$(CONFIG_PERF_EVENTS) += events/ ...
+obj-y		:= $(patsubst %/, %/built-in.o, $(obj-y))
+
+
+
+events/ :
+__subdir-y	:= $(patsubst %/,%,$(filter %/, $(obj-y)))
+subdir-y	+= $(__subdir-y)
+__subdir-m	:= $(patsubst %/,%,$(filter %/, $(obj-m)))
+subdir-m	+= $(__subdir-m)
+obj-y		:= $(patsubst %/, %/built-in.o, $(obj-y))
+obj-m		:= $(filter-out %/, $(obj-m))
+# Subdirectories we need to descend into
+subdir-ym	:= $(sort $(subdir-y) $(subdir-m))
+# Descending
+# ---------------------------------------------------------------------------
+$(subdir-ym):
+	$(Q)$(MAKE) $(build)=$@
+
+kernel/fork.o: kernel/fork.c FORCE
+#  commands to execute (from `./scripts/Makefile.build', line 257):
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+	
+
+
+
+rules
+
+
+kernel/built-in.o:
+
+ifdef builtin-target
+quiet_cmd_link_o_target = LD      $@
+# If the list of objects to link is empty, just create an empty built-in.o
+cmd_link_o_target = $(if $(strip $(obj-y)),\
+		      $(LD) $(ld_flags) -r -o $@ $(filter $(obj-y), $^) \
+		      $(cmd_secanalysis),\
+		      rm -f $@; $(AR) rcs$(KBUILD_ARFLAGS) $@)
+
+$(builtin-target): $(obj-y) FORCE
+	$(call if_changed,link_o_target)
+
+targets += $(builtin-target)
+endif # builtin-target
+
+
+
+kernel/fork.o: kernel/fork.c FORCE
+
+# Built-in and composite module parts
+$(obj)/%.o: $(src)/%.c $(recordmcount_source) FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+
+# if_changed      - execute command if any prerequisite is newer than
+#                   target, or command line has changed
+# if_changed_dep  - as if_changed, but uses fixdep to reveal dependencies
+#                   including used config symbols
+# if_changed_rule - as if_changed but execute rule instead
+
+if_changed_rule = $(if $(strip $(any-prereq) $(arg-check) ),                 \
+	@set -e;                                                             \
+	$(rule_$(1)))
+
+define rule_cc_o_c
+	$(call echo-cmd,checksrc) $(cmd_checksrc)			  \
+	$(call echo-cmd,cc_o_c) $(cmd_cc_o_c);				  \
+	$(cmd_modversions)						  \
+	$(call echo-cmd,record_mcount)					  \
+	$(cmd_record_mcount)						  \
+	scripts/basic/fixdep $(depfile) $@ '$(call make-cmd,cc_o_c)' >    \
+	                                              $(dot-target).tmp;  \
+	rm -f $(depfile);						  \
+	mv -f $(dot-target).tmp $(dot-target).cmd
+endef
+
+quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
+      cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $<
 
 
