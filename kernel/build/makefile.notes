@@ -1,4 +1,4 @@
-linux 3.18.6
+
 make defconfig
 
 %config: scripts_basic outputmakefile FORCE
@@ -628,5 +628,95 @@ endef
 
 quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
       cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $<
+
+
+  gcc -E -Wp,-MD,arch/x86/kernel/.vmlinux.lds.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__    -Ux86_64 -P -C -Ux86 -D__ASSEMBLY__ -DLINKER_SCRIPT -o arch/x86/kernel/vmlinux.lds arch/x86/kernel/vmlinux.lds.S
+
+  LINK    vmlinux
+  LD      vmlinux.o
+  MODPOST vmlinux.o
+
+  /bin/bash scripts/link-vmlinux.sh ld -m elf_x86_64 --build-id
++ modpost_link vmlinux.o
++ ld -m elf_x86_64 -r -o vmlinux.o arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group
++ make -f ./scripts/Makefile.modpost vmlinux.o
+  scripts/mod/modpost   -o ./Module.symvers    -S  vmlinux.o
+
+
+  LD      vmlinux.o
++ modpost_link vmlinux.o
++ ld -m elf_x86_64 -r -o vmlinux.o arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group
+	${LD} ${LDFLAGS} -r -o ${1} ${KBUILD_VMLINUX_INIT} --start-group ${KBUILD_VMLINUX_MAIN} --end-group
++ make -f ./scripts/Makefile.modpost vmlinux.o
+# modpost vmlinux.o to check for section mismatches
+${MAKE} -f "${srctree}/scripts/Makefile.modpost" vmlinux.o
+  scripts/mod/modpost   -o ./Module.symvers    -S  vmlinux.o
+
+  GEN     .version
+
+
+# final build of init/
+${MAKE} -f "${srctree}/scripts/Makefile.build" obj=init
++ make -f ./scripts/Makefile.build obj=init
+
+	# step 1
+	vmlinux_link "" .tmp_vmlinux1
+	kallsyms .tmp_vmlinux1 .tmp_kallsyms1.o
+	${NM} -n ${1} | scripts/kallsyms ${kallsymopt} | ${CC} ${aflags} -c -o ${2} -x assembler-with-cpp -
+
+	# step 2
+	vmlinux_link .tmp_kallsyms1.o .tmp_vmlinux2
+	kallsyms .tmp_vmlinux2 .tmp_kallsyms2.o
+
++ ld -m elf_x86_64 --build-id -o .tmp_vmlinux1 -T ./arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group
+  KSYM    .tmp_kallsyms1.o
++ nm -n .tmp_vmlinux1
++ scripts/kallsyms --absolute-percpu
++ gcc -D__ASSEMBLY__ -m64 -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -c -o .tmp_kallsyms1.o -x assembler-with-cpp -
+
++ vmlinux_link .tmp_kallsyms1.o .tmp_vmlinux2
++ ld -m elf_x86_64 --build-id -o .tmp_vmlinux2 -T ./arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group .tmp_kallsyms1.o
+  KSYM    .tmp_kallsyms2.o
++ nm -n .tmp_vmlinux2
++ gcc -D__ASSEMBLY__ -m64 -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -DCONFIG_AS_CFI_SECTIONS=1 -DCONFIG_AS_FXSAVEQ=1 -DCONFIG_AS_CRC32=1 -DCONFIG_AS_AVX=1 -DCONFIG_AS_AVX2=1 -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__ -c -o .tmp_kallsyms2.o -x assembler-with-cpp -
++ scripts/kallsyms --absolute-percpu
+
+info LD vmlinux
+vmlinux_link "${kallsymso}" vmlinux
+  LD      vmlinux
++ ld -m elf_x86_64 --build-id -o vmlinux -T ./arch/x86/kernel/vmlinux.lds arch/x86/kernel/head_64.o arch/x86/kernel/head64.o arch/x86/kernel/head.o init/built-in.o --start-group usr/built-in.o arch/x86/built-in.o kernel/built-in.o mm/built-in.o fs/built-in.o ipc/built-in.o security/built-in.o crypto/built-in.o block/built-in.o lib/lib.a arch/x86/lib/lib.a lib/built-in.o arch/x86/lib/built-in.o drivers/built-in.o sound/built-in.o firmware/built-in.o arch/x86/pci/built-in.o arch/x86/power/built-in.o arch/x86/video/built-in.o net/built-in.o --end-group .tmp_kallsyms2.o
+
+  SORTEX  vmlinux
++ ./scripts/sortextable vmlinux
+
+  SYSMAP  System.map
++ /bin/bash ./scripts/mksysmap vmlinux System.map
++ /bin/bash ./scripts/mksysmap .tmp_vmlinux2 .tmp_System.map
+$NM -n $1 | grep -v '\( [aNUw] \)\|\(__crc_\)\|\( \$[adt]\)' > $2
+
+
+vmlinux 
+	arch/x86/boot/compressed/vmlinux.bin
+		arch/x86/boot/compressed/vmlinux.bin.gz
+			arch/x86/boot/compressed/piggy.S
+				arch/x86/boot/compressed/piggy.o
+					arch/x86/boot/compressed/vmlinux
+
+
+make -f ./scripts/Makefile.build obj=arch/x86/boot/compressed arch/x86/boot/compressed/vmlinux
+  gcc -E -Wp,-MD,arch/x86/boot/compressed/.vmlinux.lds.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__     -P -C -Ux86 -D__ASSEMBLY__ -DLINKER_SCRIPT -o arch/x86/boot/compressed/vmlinux.lds arch/x86/boot/compressed/vmlinux.lds.S
+  objcopy  -R .comment -S vmlinux arch/x86/boot/compressed/vmlinux.bin
+  (cat arch/x86/boot/compressed/vmlinux.bin | gzip -n -f -9 > arch/x86/boot/compressed/vmlinux.bin.gz) || (rm -f arch/x86/boot/compressed/vmlinux.bin.gz ; false)
+  gcc -Wp,-MD,arch/x86/boot/compressed/.mkpiggy.d -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89   -I./tools/include  -o arch/x86/boot/compressed/mkpiggy arch/x86/boot/compressed/mkpiggy.c  
+  arch/x86/boot/compressed/mkpiggy arch/x86/boot/compressed/vmlinux.bin.gz 21983232 > arch/x86/boot/compressed/piggy.S || ( rm -f arch/x86/boot/compressed/piggy.S ; false )
+  gcc -Wp,-MD,arch/x86/boot/compressed/.piggy.o.d  -nostdinc -isystem /usr/lib/gcc/x86_64-linux-gnu/4.8/include -I./arch/x86/include -Iarch/x86/include/generated  -Iinclude -I./arch/x86/include/uapi -Iarch/x86/include/generated/uapi -I./include/uapi -Iinclude/generated/uapi -include ./include/linux/kconfig.h -D__KERNEL__  -m64 -D__KERNEL__  -O2 -fno-strict-aliasing -fPIC -DDISABLE_BRANCH_PROFILING -mcmodel=small -mno-mmx -mno-sse -ffreestanding -fno-stack-protector -D__ASSEMBLY__         -c -o arch/x86/boot/compressed/piggy.o arch/x86/boot/compressed/piggy.S
+  ld -m elf_x86_64   -T arch/x86/boot/compressed/vmlinux.lds arch/x86/boot/compressed/head_64.o arch/x86/boot/compressed/misc.o arch/x86/boot/compressed/string.o arch/x86/boot/compressed/cmdline.o arch/x86/boot/compressed/piggy.o arch/x86/boot/compressed/cpuflags.o arch/x86/boot/compressed/early_serial_console.o -o arch/x86/boot/compressed/vmlinux
+  nm arch/x86/boot/compressed/vmlinux | sed -n -e 's/^\([0-9a-fA-F]*\) [ABCDGRSTVW] \(startup_32\|startup_64\|efi32_stub_entry\|efi64_stub_entry\|efi_pe_entry\|input_data\|_end\|z_.*\)$/#define ZO_ 0x/p' > arch/x86/boot/zoffset.h
+
+  ld -m elf_x86_64   -T arch/x86/boot/setup.ld arch/x86/boot/a20.o arch/x86/boot/bioscall.o arch/x86/boot/cmdline.o arch/x86/boot/copy.o arch/x86/boot/cpu.o arch/x86/boot/cpuflags.o arch/x86/boot/cpucheck.o arch/x86/boot/early_serial_console.o arch/x86/boot/edd.o arch/x86/boot/header.o arch/x86/boot/main.o arch/x86/boot/mca.o arch/x86/boot/memory.o arch/x86/boot/pm.o arch/x86/boot/pmjump.o arch/x86/boot/printf.o arch/x86/boot/regs.o arch/x86/boot/string.o arch/x86/boot/tty.o arch/x86/boot/video.o arch/x86/boot/video-mode.o arch/x86/boot/version.o arch/x86/boot/video-vga.o arch/x86/boot/video-vesa.o arch/x86/boot/video-bios.o -o arch/x86/boot/setup.elf
+  objcopy  -O binary arch/x86/boot/setup.elf arch/x86/boot/setup.bin
+  objcopy  -O binary -R .note -R .comment -S arch/x86/boot/compressed/vmlinux arch/x86/boot/vmlinux.bin
+  gcc -Wp,-MD,arch/x86/boot/tools/.build.d -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89   -I./tools/include -include include/generated/autoconf.h -D__EXPORTED_HEADERS__  -o arch/x86/boot/tools/build arch/x86/boot/tools/build.c  
+  arch/x86/boot/tools/build arch/x86/boot/setup.bin arch/x86/boot/vmlinux.bin arch/x86/boot/zoffset.h arch/x86/boot/bzImage
 
 
