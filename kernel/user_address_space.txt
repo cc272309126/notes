@@ -1,0 +1,276 @@
+
+
+struct address_space {
+    struct inode        *host;      /* owner: inode, block_device */
+    struct radix_tree_root  page_tree;  /* radix tree of all pages */
+    spinlock_t      tree_lock;  /* and lock protecting it */
+    unsigned int        i_mmap_writable;/* count VM_SHARED mappings */
+    struct rb_root      i_mmap;     /* tree of private and shared mappings */
+    struct list_head    i_mmap_nonlinear;/*list VM_NONLINEAR mappings */
+    struct mutex        i_mmap_mutex;   /* protect tree, count, list */
+    /* Protected by tree_lock together with the radix tree */
+    unsigned long       nrpages;    /* number of total pages */
+    pgoff_t         writeback_index;/* writeback starts here */
+    const struct address_space_operations *a_ops;   /* methods */
+    unsigned long       flags;      /* error bits/gfp mask */
+    struct backing_dev_info *backing_dev_info; /* device readahead, etc */
+    spinlock_t      private_lock;   /* for use by the address_space */
+    struct list_head    private_list;   /* ditto */
+    void            *private_data;  /* ditto */
+};
+
+struct address_space_operations {
+    int (*writepage)(struct page *page, struct writeback_control *wbc);
+    int (*readpage)(struct file *, struct page *);
+
+    /* Write back some dirty pages from this mapping. */
+    int (*writepages)(struct address_space *, struct writeback_control *);
+
+    /* Set a page dirty.  Return true if this dirtied it */
+    int (*set_page_dirty)(struct page *page);
+
+    int (*readpages)(struct file *filp, struct address_space *mapping,
+            struct list_head *pages, unsigned nr_pages);
+
+    int (*write_begin)(struct file *, struct address_space *mapping,
+                loff_t pos, unsigned len, unsigned flags,
+                struct page **pagep, void **fsdata);
+    int (*write_end)(struct file *, struct address_space *mapping,
+                loff_t pos, unsigned len, unsigned copied,
+                struct page *page, void *fsdata);
+
+    /* Unfortunately this kludge is needed for FIBMAP. Don't use it */
+    sector_t (*bmap)(struct address_space *, sector_t);
+    void (*invalidatepage) (struct page *, unsigned int, unsigned int);
+    int (*releasepage) (struct page *, gfp_t);
+    void (*freepage)(struct page *);
+    ssize_t (*direct_IO)(int, struct kiocb *, const struct iovec *iov,
+            loff_t offset, unsigned long nr_segs);
+    int (*get_xip_mem)(struct address_space *, pgoff_t, int,
+                        void **, unsigned long *);
+    /*
+     * migrate the contents of a page to the specified target. If
+     * migrate_mode is MIGRATE_ASYNC, it must not block.
+     */
+    int (*migratepage) (struct address_space *,
+            struct page *, struct page *, enum migrate_mode);
+    int (*launder_page) (struct page *);
+    int (*is_partially_uptodate) (struct page *, read_descriptor_t *,
+                    unsigned long);
+    void (*is_dirty_writeback) (struct page *, bool *, bool *);
+    int (*error_remove_page)(struct address_space *, struct page *);
+
+    /* swapfile support */
+    int (*swap_activate)(struct swap_info_struct *sis, struct file *file,
+                sector_t *span);
+    void (*swap_deactivate)(struct file *file);
+};
+
+static const struct address_space_operations ext4_aops = {
+    .readpage       = ext4_readpage,
+    .readpages      = ext4_readpages,
+    .writepage      = ext4_writepage,
+    .writepages     = ext4_writepages,
+    .write_begin        = ext4_write_begin,
+    .write_end      = ext4_write_end,
+    .bmap           = ext4_bmap,
+    .invalidatepage     = ext4_invalidatepage,
+    .releasepage        = ext4_releasepage,
+    .direct_IO      = ext4_direct_IO,
+    .migratepage        = buffer_migrate_page,
+    .is_partially_uptodate  = block_is_partially_uptodate,
+    .error_remove_page  = generic_error_remove_page,
+};
+
+/*
+ * This struct defines a memory VMM memory area. There is one of these
+ * per VM-area/task.  A VM area is any part of the process virtual memory
+ * space that has a special rule for the page-fault handlers (ie a shared
+ * library, the executable area etc).
+ */
+struct vm_area_struct {
+    /* The first cache line has the info for VMA tree walking. */
+    unsigned long vm_start;     /* Our start address within vm_mm. */
+    unsigned long vm_end;       /* The first byte after our end address within vm_mm. */
+    /* linked list of VM areas per task, sorted by address */
+    struct vm_area_struct *vm_next, *vm_prev;
+    struct rb_node vm_rb;
+    ...
+    /* Second cache line starts here. */
+    struct mm_struct *vm_mm;    /* The address space we belong to. */
+    pgprot_t vm_page_prot;      /* Access permissions of this VMA. */
+    unsigned long vm_flags;     /* Flags, see mm.h. */
+    /*
+     * For areas with an address space and backing store,
+     * linkage into the address_space->i_mmap interval tree, or
+     * linkage of vma in the address_space->i_mmap_nonlinear list.
+     */
+    union {
+        struct {
+            struct rb_node rb;
+            unsigned long rb_subtree_last;
+        } linear;
+        struct list_head nonlinear;
+    } shared;
+    struct list_head anon_vma_chain; /* Serialized by mmap_sem & * page_table_lock */
+    struct anon_vma *anon_vma;  /* Serialized by page_table_lock */
+    /* Function pointers to deal with this struct. */
+    const struct vm_operations_struct *vm_ops;
+    /* Information about our backing store: */
+    unsigned long vm_pgoff;     /* Offset (within vm_file) in PAGE_SIZE units, *not* PAGE_CACHE_SIZE */
+    struct file * vm_file;      /* File we map to (can be NULL). */
+    void * vm_private_data;     /* was vm_pte (shared mem) */
+    ...
+};
+
+/*
+ * These are the virtual MM functions - opening of an area, closing and
+ * unmapping it (needed to keep files on disk up-to-date etc), pointer
+ * to the functions called when a no-page or a wp-page exception occurs. 
+ */
+struct vm_operations_struct {
+    void (*open)(struct vm_area_struct * area);
+    void (*close)(struct vm_area_struct * area);
+    int (*fault)(struct vm_area_struct *vma, struct vm_fault *vmf);
+    /* notification that a previously read-only page is about to become
+     * writable, if an error is returned it will cause a SIGBUS */
+    int (*page_mkwrite)(struct vm_area_struct *vma, struct vm_fault *vmf);
+    /* called by access_process_vm when get_user_pages() fails, typically
+     * for use by special VMAs that can switch between memory and hardware
+     */
+    int (*access)(struct vm_area_struct *vma, unsigned long addr,
+              void *buf, int len, int write);
+    /* called by sys_remap_file_pages() to populate non-linear mapping */
+    int (*remap_pages)(struct vm_area_struct *vma, unsigned long addr,
+               unsigned long size, pgoff_t pgoff);
+};
+
+const struct vm_operations_struct generic_file_vm_ops = {
+    .fault      = filemap_fault,
+    .page_mkwrite   = filemap_page_mkwrite,
+    .remap_pages    = generic_file_remap_pages,
+};
+
+
+struct file {
+    struct llist_node   fu_llist;
+    struct path     f_path; /* f_path.dentry */
+    struct inode        *f_inode;   /* cached value */
+    const struct file_operations    *f_op;
+    spinlock_t      f_lock;
+    atomic_long_t       f_count;
+    unsigned int        f_flags;
+    fmode_t         f_mode;
+    struct mutex        f_pos_lock;
+    loff_t          f_pos;
+    struct fown_struct  f_owner;
+    const struct cred   *f_cred;
+    struct file_ra_state    f_ra;
+    ...
+    struct address_space    *f_mapping;
+    ...
+};
+
+
+struct inode {
+    umode_t         i_mode;
+    unsigned short      i_opflags;
+    kuid_t          i_uid;
+    kgid_t          i_gid;
+    unsigned int        i_flags;
+    ...
+    const struct inode_operations   *i_op;
+    struct super_block  *i_sb;
+    struct address_space    *i_mapping;
+    ...
+    struct timespec     i_atime;
+    struct timespec     i_mtime;
+    struct timespec     i_ctime;
+    ...
+};
+
+struct address_space {
+    struct inode        *host;      /* owner: inode, block_device */
+    struct radix_tree_root  page_tree;  /* radix tree of all pages */
+    spinlock_t      tree_lock;  /* and lock protecting it */
+    ...
+    struct rb_root      i_mmap;     /* tree of private and shared mappings */
+        vm_area_struct->shared->linear->struct rb_node
+    struct list_head    i_mmap_nonlinear;/*list VM_NONLINEAR mappings */
+        vm_area_struct->shared->nolinear->struct list_head
+    ...
+};
+
+file in disk = 1 inode = 1 * address_space 
+
+struct file->f_mapping == struct inode->i_mapping
+
+
+do_page_fault
+    __do_page_fault
+        handle_mm_fault
+            __handle_mm_fault
+                handle_pte_fault
+                    do_linear_fault
+                    do_swap_page
+
+do_linear_fault
+    __do_fault
+        vm_area_struct->vm_operations_struct->fault == filemap_fault
+        vm_area_struct->vm_file->f_mapping->address_space_operations->readpage
+    
+        
+address_space -- radix_tree_root
+
+/* root tags are stored in gfp_mask, shifted by __GFP_BITS_SHIFT */
+struct radix_tree_root {
+    unsigned int        height;
+    gfp_t           gfp_mask;
+    struct radix_tree_node  __rcu *rnode;
+};
+
+page_cache_alloc
+    __page_cache_alloc
+        alloc_pages
+add_to_page_cache
+    add_to_page_cache_locked
+        radix_tree_insert
+        
+find_get_page
+    radix_tree_lookup_slot
+    
+
+ 内存映射原理*
+   由于每个进程的虚存空间大小都是3G，远远大于实际的物理内存大小，只有最常用的部分才与物理内存的页帧相联系，其他部分通过缺页异常来从磁盘等缓冲中动态加载进进程虚拟内存的内存映射空间区域
+  在调用mmap系统调用时，建立文件在磁盘上位置与在进程虚拟地址空间中的位置的映射关系，实现如下：在进程虚存空间中分配一段存储区域vm_area_strut结构，然后将vma->vm_ops->fault = filemap_fault，
+  [该函数实现：将磁盘中的存储页拷贝到物理内存addreass_space物理内存空间中，并建立该物理内存页到进程虚存页表的映射；]
+  而vma->pgoff指向文件内偏移，此时并不将文件内容加载到实际的物理内存中，当进程试图访问一个虚拟地址，用页表无法确定其物理地址时，将触发缺页异常，内核找到对应的vm_area_struct结构{或者确定该访问无效}找到后备存储器，然后分配物理内存，并且读取内容到物理内存中，建立物理内存到该进程虚存关系[即填写进程页表结构]，应用程序恢复执行
+  mmap系统调用实质上只是在进程虚存空间申请了虚存区域，建立了虚存区域和文件file即文件偏移的关系，以及定义了vm的fault函数。即没有给其分配物理内存，建立虚存和物理内存的映射，也没有将数据从磁盘存储空间中读入到物理内存中；
+  
+  
+
+
+do_linear_fault
+    __do_fault
+        vma->vm_ops->fault == filemap_fault 
+    
+filemap_fault
+    !find_get_page
+    page_cache_read
+        page_cache_alloc_cold
+        add_to_page_cache_lru
+    goto retry_find
+    find_get_page
+    !PageUptodate
+    struct address_space->a_ops->readpage(file, page); == ext4_readpage
+    goto retry_find
+    vmf->page = page;
+    return ret | VM_FAULT_LOCKED;
+    
+    
+两种地址空间
+inode address_space --> physical pages 
+process  address_space --> vm_area_struct --> virtual pages (virtual address) 
+
+
+
