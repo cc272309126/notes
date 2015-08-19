@@ -1,0 +1,454 @@
+
+framework:
+link layer rx tx (driver to memory, interrupt--napi, allock skb, copy skb--dma, softirq, perCPU skblist)
+IP layer rx tx
+transfer layer
+    tcp rx tx
+    udp rx tx
+socket layer rx tx
+
+
+struct sk_buff 
+
+socket -- link type, transfter layer type, address family
+bind -- address: ip and port
+
+struct sockaddr_in {
+  __kernel_sa_family_t  sin_family; /* Address family       */
+  __be16        sin_port;   /* Port number          */
+  struct in_addr    sin_addr;   /* Internet address     */
+};
+
+struct sk_buff {
+    /* These two members must be first. */
+    struct sk_buff      *next;
+    struct sk_buff      *prev;
+    ktime_t     tstamp;
+    struct sock     *sk;
+    struct net_device   *dev;
+    ...
+    /* These elements must be at the end, see alloc_skb() for details.  */
+    sk_buff_data_t      tail;   -- tmplast
+    sk_buff_data_t      end;    -- last
+    unsigned char       *head;  -- 0
+    unsigned char       *data;  -- tmp0
+    unsigned int        truesize;
+    atomic_t        users;
+};
+
+struct net_device;
+net/core/dev.c
+register_netdev
+/sys/class/net/<device> 
+eth0 -> ../../devices/pci0000:00/0000:00:1c.4/0000:06:00.0/net/eth0
+eth1 -> ../../devices/pci0000:00/0000:00:1c.4/0000:06:00.1/net/eth1
+lo -> ../../devices/virtual/net/lo 
+
+struct net_device {
+    char            name[IFNAMSIZ];
+    struct hlist_node   name_hlist;
+    char            *ifalias;
+    /*
+     *  I/O specific fields
+     *  FIXME: Merge these and struct ifmap into one
+     */
+    unsigned long       mem_end;
+    unsigned long       mem_start;
+    unsigned long       base_addr;
+    int         irq;
+
+    /*
+     *  Some hardware also needs these fields (state,dev_list,
+     *  napi_list,unreg_list,close_list) but they are not
+     *  part of the usual set specified in Space.c.
+     */
+
+    unsigned long       state;
+
+    struct list_head    dev_list;
+    struct list_head    napi_list;
+    struct list_head    unreg_list;
+    struct list_head    close_list;
+
+    struct {
+        struct list_head upper;
+        struct list_head lower;
+    } adj_list;
+
+    struct {
+        struct list_head upper;
+        struct list_head lower;
+    } all_adj_list;
+
+    netdev_features_t   features;
+    netdev_features_t   hw_features;
+    netdev_features_t   wanted_features;
+    netdev_features_t   vlan_features;
+    netdev_features_t   hw_enc_features;
+    netdev_features_t   mpls_features;
+
+    int         ifindex;
+    int         iflink;
+
+    struct net_device_stats stats;
+
+    atomic_long_t       rx_dropped;
+    atomic_long_t       tx_dropped;
+
+    atomic_t        carrier_changes;
+
+
+    const struct net_device_ops *netdev_ops;
+    const struct ethtool_ops *ethtool_ops;
+    const struct forwarding_accel_ops *fwd_ops;
+
+    const struct header_ops *header_ops;
+
+    unsigned int        flags;
+    unsigned int        priv_flags;
+
+    unsigned short      gflags;
+    unsigned short      padded;
+
+    unsigned char       operstate;
+    unsigned char       link_mode;
+
+    unsigned char       if_port;
+    unsigned char       dma;
+
+    unsigned int        mtu;
+    unsigned short      type;
+    unsigned short      hard_header_len;
+
+    unsigned short      needed_headroom;
+    unsigned short      needed_tailroom;
+
+    /* Interface address info. */
+    unsigned char       perm_addr[MAX_ADDR_LEN];
+    unsigned char       addr_assign_type;
+    unsigned char       addr_len;
+    unsigned short      neigh_priv_len;
+    unsigned short          dev_id;
+    unsigned short          dev_port;
+    spinlock_t      addr_list_lock;
+    struct netdev_hw_addr_list  uc;
+    struct netdev_hw_addr_list  mc;
+    struct netdev_hw_addr_list  dev_addrs;
+    
+    unsigned char       name_assign_type;
+
+    bool            uc_promisc;
+    unsigned int        promiscuity;
+    unsigned int        allmulti;
+
+    /* Protocol specific pointers */
+    void            *atalk_ptr;
+    struct in_device __rcu  *ip_ptr;
+    struct dn_dev __rcu     *dn_ptr;
+    struct inet6_dev __rcu  *ip6_ptr;
+    void            *ax25_ptr;
+    struct wireless_dev *ieee80211_ptr;
+
+/*
+ * Cache lines mostly used on receive path (including eth_type_trans())
+ */
+    unsigned long       last_rx;
+
+    /* Interface address info used in eth_type_trans() */
+    unsigned char       *dev_addr;
+
+    rx_handler_func_t __rcu *rx_handler;
+    void __rcu      *rx_handler_data;
+
+    struct netdev_queue __rcu *ingress_queue;
+    unsigned char       broadcast[MAX_ADDR_LEN];
+
+/*
+ * Cache lines mostly used on transmit path
+ */
+    struct netdev_queue *_tx ____cacheline_aligned_in_smp;
+    unsigned int        num_tx_queues;
+    unsigned int        real_num_tx_queues;
+    struct Qdisc        *qdisc;
+    unsigned long       tx_queue_len;
+    spinlock_t      tx_global_lock;
+
+
+    /* These may be needed for future network-power-down code. */
+
+    /*
+     * trans_start here is expensive for high speed devices on SMP,
+     * please use netdev_queue->trans_start instead.
+     */
+    unsigned long       trans_start;
+
+    int         watchdog_timeo;
+    struct timer_list   watchdog_timer;
+
+    int __percpu        *pcpu_refcnt;
+    struct list_head    todo_list;
+
+    struct hlist_node   index_hlist;
+    struct list_head    link_watch_list;
+
+    void (*destructor)(struct net_device *dev);
+
+    struct garp_port __rcu  *garp_port;
+    struct mrp_port __rcu   *mrp_port;
+
+    struct device   dev;
+    const struct attribute_group *sysfs_groups[4];
+    const struct attribute_group *sysfs_rx_queue_group;
+
+    const struct rtnl_link_ops *rtnl_link_ops;
+
+    u8 num_tc;
+    struct netdev_tc_txq tc_to_txq[TC_MAX_QUEUE];
+    u8 prio_tc_map[TC_BITMASK + 1];
+
+    struct phy_device *phydev;
+    struct lock_class_key *qdisc_tx_busylock;
+    int group;
+    struct pm_qos_request   pm_qos_req;
+};
+
+2.6.21
+drivers/net/isa-skeleton.c
+request_irq(dev->irq, &net_interrupt, 0, cardname, dev);
+
+net_interrupt
+    status
+    RX_INTR
+        net_rx
+            dev_alloc_skb
+            copy data to skb->data
+            netif_rx -- put the skb into bufferlist, exist the hw interrupt, raise the soft interrupt  
+                netif_rx_internal
+                    enqueue_to_backlog -- struct softnet_data;
+                        __skb_queue_tail
+                        rps_ipi_queued / ____napi_schedule
+                            __raise_softirq_irqoff(NET_RX_SOFTIRQ);
+    TX_INTR
+        net_tx
+    COUNTERS_INTR
+        localstats
+
+softnet_data
+/*
+ * Incoming packets are placed on per-cpu queues
+ */
+struct softnet_data {
+    struct Qdisc        *output_queue;
+    struct Qdisc        **output_queue_tailp;
+    struct list_head    poll_list;
+    struct sk_buff      *completion_queue;
+    struct sk_buff_head process_queue;
+    ...
+}   
+
+open_softirq(NET_TX_SOFTIRQ, net_tx_action, NULL);
+open_softirq(NET_RX_SOFTIRQ, net_rx_action, NULL);          
+
+
+NAPI
+    netif_napi_add
+net_dev_init
+    sd->backlog.poll = process_backlog;
+
+net_rx_action
+    process_backlog
+        __skb_dequeue
+        __netif_receive_skb
+            __netif_receive_skb_core
+                deliver_skb
+                    packet_type->func() = ip_rcv
+
+struct packet_type {
+    __be16          type;   /* This is really htons(ether_type). */
+    struct net_device   *dev;   /* NULL is wildcarded here       */
+    int         (*func) (struct sk_buff *,struct net_device *,struct packet_type *,struct net_device *);
+    bool            (*id_match)(struct packet_type *ptype,struct sock *sk);
+    void            *af_packet_priv;
+    struct list_head    list;
+};                  
+
+static struct packet_type ip_packet_type = {
+    .type = cpu_to_be16(ETH_P_IP),
+    .func = ip_rcv,
+};
+
+
+send_pack in link layer ??
+
+dev_queue_xmit
+    __dev_queue_xmit
+        __dev_xmit_skb
+        dev_hard_start_xmit
+            sch_direct_xmit
+                dev_hard_start_xmit
+                    xmit_one
+                        netdev_start_xmit
+                            __netdev_start_xmit
+                                ops->ndo_start_xmit
+
+
+ip_rcv ???
+    ip_route_input
+    dst_input
+        skb->dst->input(skb); 
+        
+ip_rcv
+    ip_rcv_finish
+        ip_route_input_noref
+            ipv4_is_multicast
+                ip_route_input_mc
+            ip_route_input_slow
+                ipv4_is_multicast
+                ipv4_is_lbcast
+                ipv4_is_zeronet
+                ipv4_is_loopback
+                RTN_LOCAL / local_input:
+                    rth->dst.input= ip_local_deliver;
+                    rth->dst.output= ip_rt_bug;
+                not RTN_LOCAL
+                    ip_mkroute_input
+                        __mkroute_input
+                            rth->dst.input = ip_forward;
+                            rth->dst.output = ip_output;
+                            rt_set_nexthop
+                            skb_dst_set
+        dst_input
+            skb_dst(skb)->input(skb); == ip_local_deliver / ip_forward
+            ip_local_deliver
+                ip_defrag
+                    ip_find
+                    ip_frag_queue
+                        ip_frag_reasm
+                ip_local_deliver_finish
+                    raw_local_deliver
+                inet_protos[protocol]->handler(skb);  = udp_rcv / tcp_v4_rcv
+            ip_forward
+                ip_decrease_ttl
+                ip_forward_finish
+                    ip_forward_options
+                    dst_output
+                        dst_output_sk(skb->sk, skb); = ip_rt_bug / ip_output
+                        ip_output
+                            ip_finish_output
+                                ip_fragment
+                                ip_finish_output2
+                                    dst_neigh_output
+                                        struct neighbour->output
+                                        neigh_hh_output
+                                            dev_queue_xmit
+
+send package in IP layer ??
+
+dev_queue_xmit
+ip_queue_xmit
+    __sk_dst_check
+    ip_local_out
+        ip_local_out_sk
+            dst_output
+                dst_output_sk == ip_output
+
+
+struct dst_entry {
+    struct rcu_head     rcu_head;
+    struct dst_entry    *child;
+    struct net_device       *dev;
+    struct  dst_ops         *ops;
+    unsigned long       _metrics;
+    unsigned long           expires;
+    ...
+    int         (*input)(struct sk_buff *);
+    int         (*output)(struct sock *sk, struct sk_buff *skb);
+    ...
+};              
+        
+neighbour -- ARP protocol       
+struct neighbour {
+    ...
+    unsigned char       ha[ALIGN(MAX_ADDR_LEN, sizeof(unsigned long))];
+    struct hh_cache     hh;
+    int         (*output)(struct neighbour *, struct sk_buff *);
+    const struct neigh_ops  *ops;
+    ...
+    struct net_device   *dev;
+    ...
+};
+        
+inet_init
+    proto_register: tcp_prot / udp_prot / raw_prot / ping_prot
+    sock_register: inet_family_ops
+    inet_add_protocol: icmp_protocol / udp_protocol / tcp_protocol / igmp_protocol
+    inet_register_protosw: inetsw_array : tcp_prot / udp_prot / raw_prot / ping_prot
+    init: arp_init / ip_init / tcp_init / udp_init / ping_init / icmp_init / ipv4_proc_init / ...
+    
+netfilter
+    NAT
+    iptables
+
+struct sock {
+    ...
+    struct sk_buff_head sk_receive_queue;   /* skb list */
+    ...
+    struct socket_wq __rcu  *sk_wq;     /* wait process list */
+    ...
+    void            (*sk_data_ready)(struct sock *sk);  /* notify process */
+    ...
+};
+    
+udp_rcv
+    __udp4_lib_rcv
+        __udp4_lib_lookup_skb -- find sock 
+        udp_queue_rcv_skb
+            __udp_queue_rcv_skb
+                sock_queue_rcv_skb
+                    __skb_queue_tail -- struct sock->sk_receive_queue
+                    sk->sk_data_ready(sk);
+                    
+tcp_v4_rcv
+    __inet_lookup_skb
+        __inet_lookup
+            __inet_lookup_established
+            __inet_lookup_listener
+    tcp_v4_do_rcv
+        tcp_rcv_established -- fast path -- data
+            tcp_queue_rcv
+                __skb_queue_tail(&sk->sk_receive_queue, skb);
+            tcp_ack
+            sk->sk_data_ready(sk); = sock_def_readable
+        tcp_rcv_state_process -- slow path -- control info
+            TCP_ESTABLISHED = 1,
+            TCP_SYN_SENT,
+            TCP_SYN_RECV,
+            TCP_FIN_WAIT1,
+            TCP_FIN_WAIT2,
+            TCP_TIME_WAIT,
+            TCP_CLOSE,
+            TCP_CLOSE_WAIT,
+            TCP_LAST_ACK,
+            TCP_LISTEN,
+            TCP_CLOSING,    
+            TCP_NEW_SYN_RECV,           
+            
+static const struct net_proto_family inet_family_ops = {
+    .family = PF_INET,
+    .create = inet_create,
+    .owner  = THIS_MODULE,
+};
+inet_create
+    sock_init_data
+        sk->sk_state_change =   sock_def_wakeup;
+        sk->sk_data_ready   =   sock_def_readable;
+        sk->sk_write_space  =   sock_def_write_space;
+        sk->sk_error_report =   sock_def_error_report;
+        sk->sk_destruct     =   sock_def_destruct;      
+        
+sock_def_readable
+    wake_up_interruptible_sync_poll(&wq->wait, POLLIN | POLLPRI | POLLRDNORM | POLLRDBAND);
+    
+tcp_sendmsg
+sys_socketcall
+
