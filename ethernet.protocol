@@ -1,0 +1,28 @@
+
+mac package
+
+source mac : dest mac  : type(ip/arp/rarp) : payload (46 <= size <= 1500 mtu) : CRC
+
+ip header:
+version
+header length + data length
+source ip + dest ip
+CRC
+type (tcp/udp/icmp/igmp)
+fragment flag + offset
+tos 
+
+tcp header:
+header length
+source port + dest port
+sequence number + ack sequence number
+CRC
+flag(fin, syn, reset, push, ack, urgent) 
+window size 
+urgent pointer
+
+udp header:
+header length
+source port + dest port
+CRC
+
