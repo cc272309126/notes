@@ -1,0 +1,52 @@
+
+
+insert
+=====
+
+atomic operation
+
+A->C
+B->C
+
+A->next = B
+
+
+pros:
+in time
+
+cons:
+no
+
+
+delete
+====
+
+
+atomic operation
+
+A->B->C
+
+A->next = C
+(wait for a long time) free(B)
+
+pros:
+in time
+
+cons:
+waste a little memory for a little time
+
+
+modify
+====
+
+insert new node + delete old node
+
+A->B->C
+
+B' = copy(B)
+B'->next = C
+
+A->next = B'
+(wait for a little time) free(B)
+
+
