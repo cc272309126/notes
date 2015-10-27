@@ -34,6 +34,7 @@ in time
 
 cons:
 waste a little memory for a little time
+*block writer or not block*
 
 
 modify
@@ -48,5 +49,94 @@ B'->next = C
 
 A->next = B'
 (wait for a little time) free(B)
+
+
+code
+====
+
+ 1 struct el {                           1 struct el {
+ 2   struct list_head lp;                2   struct list_head lp;
+ 3   long key;                           3   long key;
+ 4   spinlock_t mutex;                   4   spinlock_t mutex;
+ 5   int data;                           5   int data;
+ 6   // Other data fields                6   // Other data fields
+ 7 };                                    7 };
+ 8 DEFINE_RWLOCK(listmutex);             8 DEFINE_SPINLOCK(listmutex);
+ 9 LIST_HEAD(head);                      9 LIST_HEAD(head);
+
+ 1 int search(long key, int *result)     1 int search(long key, int *result)   //**
+ 2 {                                     2 {
+ 3   struct el *p;                       3   struct el *p; //**
+ 4                                       4
+ 5   read_lock(&listmutex);              5   rcu_read_lock();
+ 6   list_for_each_entry(p, &head, lp) { 6   list_for_each_entry_rcu(p, &head, lp) {
+ 7     if (p->key == key) {              7     if (p->key == key) {
+ 8       *result = p->data;              8       *result = p->data; //**
+ 9       read_unlock(&listmutex);        9       rcu_read_unlock();
+10       return 1;                      10       return 1;
+11     }                                11     }
+12   }                                  12   }
+13   read_unlock(&listmutex);           13   rcu_read_unlock();
+14   return 0;                          14   return 0;
+15 }                                    15 }
+
+ 1 int delete(long key)                  1 int delete(long key)
+ 2 {                                     2 {
+ 3   struct el *p;                       3   struct el *p; //**
+ 4                                       4
+ 5   write_lock(&listmutex);             5   spin_lock(&listmutex);
+ 6   list_for_each_entry(p, &head, lp) { 6   list_for_each_entry(p, &head, lp) {
+ 7     if (p->key == key) {              7     if (p->key == key) {
+ 8       list_del(&p->lp);               8       list_del_rcu(&p->lp);
+ 9       write_unlock(&listmutex);       9       spin_unlock(&listmutex);
+                                        10       synchronize_rcu();
+10       kfree(p);                      11       kfree(p);
+11       return 1;                      12       return 1;
+12     }                                13     }
+13   }                                  14   }
+14   write_unlock(&listmutex);          15   spin_unlock(&listmutex);
+15   return 0;                          16   return 0;
+16 }                                    17 }
+
+
+block
+====
+
+618void synchronize_rcu(void)
+ 619{
+ 620        struct rcu_synchronize rcu;
+ 621
+ 622        init_completion(&rcu.completion);
+ 623        /* Will wake me after RCU finished */ //*
+ 624        call_rcu(&rcu.head, wakeme_after_rcu); 
+ 625
+ 626        /* Wait for it */ //*
+ 627        wait_for_completion(&rcu.completion);
+ 628}
+
+下面void synchronize_rcu(void)字段解释：
+ 622>  init_completion(&rcu.completion);  初始化rcu.completion结构，初始化为等待事件未完成
+ 624>  call_rcu(&rcu.head, wakeme_after_rcu);  在当前CPU的私有数据中，注册回调函数。
+ 其中回调函数的complete(&rcu->completion); 用来唤醒等待队列的进程。
+
+
+The implementation of synchronize_rcu moves the caller of synchronize_cpu to each CPU, thus blocking until all CPUs have been able to perform the context switch.
+
+not block
+====
+
+
+
+函数 call_rcu 也由 RCU 写端调用，它不会使写者阻塞，因而可以在中断上下文或 softirq 使用，该函数将把函数 func 挂接到 RCU回调函数链上，然后立即返回。
+
+**时钟中断触发垃圾收集器运行**，它会检查：
+
+   1. 是否在该CPU上有需要处理的回调函数并且已经经过一个grace period(即所有读执行单元已经完成对临界区的访问)；
+   2. 是否没有需要处理的回调函数但有注册的回调函数；
+   3. 是否该CPU已经完成回调函数的处理；
+   4. 是否该CPU正在等待一个quiescent state的到来；
+
+如果以上四个条件只要有一个满足，它就调用函数rcu_check_callbacks。
+
 
 
