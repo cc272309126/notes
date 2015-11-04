@@ -1,0 +1,48 @@
+
+br2684_create
+    alloc_netdev
+        br2684_setup
+            ether_setup
+    register_netdev
+        register_netdevice
+            list_netdevice -- /* Device list insertion */
+
+
+device register
+module_init(e100_init_module);
+    pci_register_driver(&e100_driver);
+        .probe = e100_probe,
+            alloc_etherdev
+            
+driver register
+
+pci_register_driver
+    __pci_register_driver
+        drv->driver.bus = &pci_bus_type;
+        driver_register
+            driver_find
+            bus_add_driver - Add a driver to the bus.
+                driver_attach
+                    bus_for_each_dev(drv->bus, NULL, drv, __driver_attach);
+                    __driver_attach
+                        driver_probe_device
+                            really_probe
+                                
+                                
+really_probe
+    if (dev->bus->probe) {
+        ret = dev->bus->probe(dev);  ==> pci_device_probe
+                                            __pci_device_probe
+                                                pci_call_probe
+                                                    local_pci_probe
+                                                        pci_drv->probe
+        if (ret)
+            goto probe_failed;
+    } else if (drv->probe) {
+        ret = drv->probe(dev);
+        if (ret)
+            goto probe_failed;
+    }
+    
+
+
