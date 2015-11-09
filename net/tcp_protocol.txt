@@ -1,0 +1,56 @@
+
+flow control
+congestion control
+
+slow start
+congestion window - cwnd 
+1 -- RTT(round trip time), receive ack -- 2^n
+
+congestion avoidance -- jacobon
+timeout / 3 same acks
+ 
+slow start thresh(ssthresh)  = cwnd/2
+timeout, cwnd = 1
+others if cwnd > ssthresh
+1 RTT, cwnd +=1
+
+fast retransmit
+fast recovery -- reno
+not wait RTO
+ssthresh = cwnd/2
+cwnd /= 2
+
+selective acknowldegement, sack  -- newreno
+
+Tahoe
+Reno
+NewReno
+SACK
+
+
+linux 2.6版的内核，网络数据从网线到应用程序需经过3次copy,分别是：
+1. 网线上的电信号经过网卡驱动DMA到网卡的环形FIFO里；
+2. 从网卡的接收环形FIFO里copy到TCP/IP协议栈的sk_buff里；
+3. 应用程序的socket调用recv()函数从协议栈的buffer里copy到用户进程的buffer里。
+
+
+Flow control
+sliding window flow control protocol
+
+window
+expand ratio (16bit - 31 bit)
+Option-Kind#1 | Option-Length#3 | Option-Data #4
+option-kind = 3
+Option-Data = 0 -14
+
+theory
+data in send buffer
+category#1 sent and acknowledged
+category#2 sent but not yet acknowledged
+category#3 not sent recipient ready to receive
+category#4 not sent recipoent NOT ready to receive
+
+send window = category2+category3
+
+ack sequence + window size = Max data sequence to be sent
+
