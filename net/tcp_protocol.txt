@@ -54,3 +54,52 @@ send window = category2+category3
 
 ack sequence + window size = Max data sequence to be sent
 
+
+slow start
+----------
+  - Linear additive increase takes too long to ramp up a new TCP connection from cold start.
+  - Beginning with TCP Tahoe, the slow start mechanism was added to provide an initial exponential increase in the size of cwnd.
+  - Remember mechanism by: slow start prevents a slow start. Moreover, slow start is slower than sending a full advertised window’s worth of packets all at once.
+
+  - the source starts with cwnd = 1.
+  - Every time an ACK arrives, cwnd is incremented.
+  - cwnd is effectively doubled per RTT “epoch”.
+  - Two slow start situations:
+    -- At the very beginning of a connection {cold start}.
+    -- When the connection goes dead waiting for a timeout to occur (i.e, the advertized window goes to zero!)
+
+  - However, in the second case the source has more information. The current value of cwnd can be saved as a congestion threshold.
+  - This is also known as the “slow start threshold” ssthresh.
+
+slow start -- wait for timeout -- cwnd/2 -- slow start -- congestion avoidance
+
+Fast Retransmit
+---------------
+  - Coarse timeouts remained a problem, and Fast retransmit was added with TCP Tahoe.
+  - Since the receiver responds every time a packet arrives, this implies the sender will see duplicate ACKs.
+  - Basic Idea:: use duplicate ACKs to signal lost packet.
+  - Upon receipt of three duplicate ACKs, the TCP Sender retransmits the lost packet.
+
+  - Generally, fast retransmit eliminates about half the coarse-grain timeouts.
+  - This yields roughly a 20% improvement in throughput.
+  - Note – fast retransmit does not eliminate all the timeouts due to small window sizes at the source.
+
+Fast Recovery
+-------------
+  - Fast recovery was added with TCP Reno.
+  - Basic idea:: When fast retransmit detects three duplicate ACKs, start the recovery process from congestion avoidance region and use ACKs in the pipe to pace the sending of packets.
+
+    Algorithm Description
+    ~~~~~~~~~~~~~~~~~~~~~
+    The Fast-Recovery algorithm is implemented together with the Fast-Retransmit algorithm in the so-called Fast-Retransmit/Fast-Recovery algorithm
+    
+    The Fast-Retransmit/Fast-Recovery algorithm was introduced in 4.3BSD Reno release and is described in the RFC 2001 as follows:
+    
+    After receiving three duplicated ACKs in a row:
+    
+    -- Set ssthresh to half the current send window.
+    -- Retransmit the missing segment
+    -- Set cwnd=sshtresh+3.
+    -- Each time the same duplicated ACK arrives, set cwnd++. Transmit a new packet, if allowed by cwnd.
+    -- If a non-duplicated ACK arrives, then set cwnd = ssthresh and continue with a linear increase of the cwnd (Congestion-Avoidance
+
