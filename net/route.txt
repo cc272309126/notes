@@ -1,0 +1,230 @@
+
+
+route
+
+in a router
+
+top:
+10.0.0.2/24  -- e0/1 [RouterA] e0/2  -- 20.0.0.2/24 -- [RouterB] -- 40.0.0.0/24
+                      |
+                      |
+                     e0/3
+
+route table in RouterA
+
+目的地址/掩码   下一跳地址  出接口  度量值
+0.0.0.0/0   20.0.0.2    E0/2    10
+10.0.0.0/24 10.0.0.1    E0/1    0
+20.0.0.0/24 20.0.0.1    E0/2    0
+20.0.0.1/32 127.0.0.1   InLoop0 0
+40.0.0.0/24 20.0.0.2    E0/2    1
+40.0.0.0/8  30.0.0.2    E0/3    3
+50.0.0.0/24 40.0.0.2    E0/2    0
+
+
+
+1: route only exist in router, not in pc
+all packages send to a router, router find the right route
+
+
+2: composition of route 
+destip/mask  -- dest pc / dest network
+export interface -- select one in a number of export interfaces
+nexthop -- an export interface connect to a sub network. if no nexthop, just an export interface, will cause a broadcast, if has nexthop, it can direct deliver to the dest RouterB  
+priority -- priority 
+metric -- attribute for doing choice
+
+3: next hop
+在配置静态路由时，即可指定接口，也可指定下一跳。使不同的网段的主机通信，到底采用哪种方法，需要根据实际情况而定，在点到点的网络环境中，无论是指定下一跳地址还是接口地址，其效果都一样。但是在广播网络环境下，指定下一跳地址或接口地址就会起到不同的效果，如果指定为接口地址的话，那么不管数据包的目标地址是否有效，每次数据包到达时都会触发一个ARP请求，又因为ARP代理在IOS环境下默认是打开的，这意味着路由器需要配备大量的ARP高速缓存，而如果指定为下一跳地址的话，仅当第一个去往目的地址的数据包到达时才会触发ARP请求。
+
+4: find the right route
+  -- longest math, then forward
+      40.0.0.2/32, match 40.0.0.0/24    20.0.0.2    E0/2    1 | 40.0.0.0/8  30.0.0.2    E0/3    3
+      longest is 40.0.0.0/24    20.0.0.2    E0/2    1
+      result: exportinterface = e0/2, nexthop=20.0.0.2
+  -- match, if nexthop is  not direct connect, find nexthop in the route table again
+      50.0.0.2/32, match  50.0.0.0/24   40.0.0.2    E0/2    0
+      find 40.0.0.2 in route table again, match 40.0.0.0/24 20.0.0.2    E0/2    1
+      result: exportinterface = e0/2, nexthop=20.0.0.2
+  -- no match, default route
+      30.0.0.2/32, default 0.0.0.0/0    20.0.0.2    E0/2    10
+
+
+[Router]display ip routing-table
+Routing Tables: Public
+        Destinations : 7        Routes : 7
+
+Destination/Mask    Proto  Pre  Cost     NextHop       Interface
+
+0.0.0.0/0           Static 60   0        10.153.43.1     Eth0/0
+1.1.1.0/24          Static 60   0        2.2.2.2         Eth0/0
+2.2.2.2/32          RIP   100   4        10.153.43.10    Eth0/0
+3.3.3.3/24          O_ASE 150   1        10.153.43.10    Eth0/0
+10.153.43.0/24      Direct 0    0        10.153.43.116   Eth0/0
+10.153.43.116/32    Direct 0    0        127.0.0.1       InLoop0
+127.0.0.0/8         Direct 0    0        127.0.0.1       InLoop0
+      
+
+what is LAN
+what is boardcast area / conflick area 
+
+Hub -- physical layer
+do not recognise mac address and ip address, forward anything , forward any package
+Swith -- link layer
+recognise mac address but not ip address, forward package by mac address
+router -- ip layer
+recognise mac address and ip address, forward package by ip
+
+
+vlan
+(Ethernet) Packet Format
+There are several different packet formats defined; see the standard for details.
+However, a VLAN packet on an Ethernet will typically look like this:
+Destination MAC address    |  Source MAC address    |  Type (VLAN: 0x8100)    |  VLAN Tag    |  User Data   
+6                          |  6                     |  2                      |  4           |  46 - 1500
+
+The green fields have the same meaning as in a usual Ethernet packet, the VLAN Ethernet Type is 0x8100.
+Please note, that the maximum user data length is still 1500, so VLAN packets will have a maximum of 1518 bytes (which is 4 bytes longer than usual Ethernet packets).
+
+VLAN Tag
+The VLAN tag itself will look like this (length in bits):
+Priority    |  CFI    |  ID    |  Ethernet Type/Length    |  
+3           |  1      |  12    |  16                      |  
+
+
+发送的时候多个端口
+在路由系统中游历 
+4.5.1  查找出口 
+当要发送一个报文时，必定要查询发送接口，这个过程被 Linux 分为 3 个步骤，第一个步骤
+是查询路由 cache，第二个步骤是查询 FIB 表，第三步是将查询结果填入路由 cache 中以便将
+来查询。
+查找路由，当找到一条合适的路由之后，我们就从 ip_route_output_flow 中
+返回了，继续执行我们的发送报文过程。
+
+系统调用 send 在x处就返回了——用户报文还没有发送出去！而系统内部的
+定时器开始工作，它发送 ARP 报文给对端主机，当地址解析完毕，然后才把真正的报文发送出去。 
+
+know other IP -- search other MAC
+ARP（地址解析）协议就是这样一种解析协议，本来主机是完全不知道这个 IP 对应的是哪个
+主机的哪个接口，当主机要发送一个 IP 包的时候，会首先查一下自己的 ARP 高速缓存（就是一
+个 IP-MAC 地址对应表缓存，Linux 是通过 rtable+dst_entry+hh_cache 完成的），如果查询的 IP－
+MAC 值对不存在，那么主机就向网络发送一个 ARP 协议广播包，这个广播包里面就有待查询的
+IP 地址，而直接收到这份广播的包的所有主机都会查询自己的 IP 地址，如果收到广播包的某一个
+主机发现自己符合条件，那么就准备好一个包含自己的 MAC 地址的 ARP 包传送给发送 ARP 广播
+的主机，而广播主机拿到 ARP 包后会更新自己的 ARP 缓存（就是存放 IP-MAC 对应表的地方）。
+发送广播的主机就会用新的 ARP 缓存数据准备好数据链路层的的数据包发送工作。
+
+know self MAC -- search self IP
+A R P 协议有一个缺陷：假如一个设备不知道它自己的 I P 地址，就没有办法产生 A R P 请求
+和 A R P 应答。一个简单的解决办法是使用反向地址解析协议( RARP )，RARP 以 ARP 相反的方
+式工作。R A R P 发出要反向解析的物理地址并希望返回其 I P 地址，应答包括由能够提供信息的
+R A R P 服务器发出的 I P 地址。虽然发送方发出的是广播信息，  RARP 规定只有 RARP 服务器能
+产生应答。许多网络指定多个 RARP 服务器，这样做既是为了平衡负载也是为了作为出现问题时
+的备份。
+
+
+RIP
+distance vector
+
+top:
+RouterA -- RouterB -- RouterC
+
+step1:
+RouterA -- direct route table a
+RouterB -- direct route table b
+RouterC -- direct route table c
+
+step2:
+A --> notify --> B
+B --> notify --> C
+C --> notify --> B
+B --> notify --> A
+
+result:
+route table A = center(A) select in (a + b)
+route table B = center(B) select in (a + b + c)
+route table C = center(C) select in (b + c)
+
+step3:
+A --> notify --> B
+B --> notify --> C
+C --> notify --> B
+B --> notify --> A
+
+result:
+route table A = center(A) select in (a + b + c)
+route table B = center(B) select in (a + b + c)
+route table c = center(C) select in (a + b + c)
+
+
+Distance—How far
+Vector—In which direction
+DV路由协议的特征
+采用周期性的完全更新(发送整个路由表)和触发更新结合的路由更新方式
+采用广播的方式进行路由更新（RIPv2采用的是组播）
+DV的路由协议有RIPv1，RIPv2，IGRP
+EIGRP和BGP属于高级的DV协议，他们学习路径的方式更多的趋近于DV，但是他们具备很多LS的特征（比如触发更新，组播更新等）
+
+
+距离矢量:
+　　运行距离矢量路由协议的路由器,会将所有它知道的路由信息与邻居共享,但是只与直连邻居共享！
+链路状态:
+　　运行链路状态路由协议的路由器,只将它所直连的链路状态与邻居共享,这个邻居是指一个域内(domain),或一个区域内(area)的所有路由器！
+
+所有距离矢量路由协议均使用Bellman-Ford(Ford-Fulkerson) 算法，容易产生路由环路（loop）和计数到无穷大（counting to infinity）的问题。因此它们必须结合一些防环机制：
+　　split-horizon
+　　route poisoning
+　　poison reverse
+　　hold-down timer
+　　trigger updates
+　　同时由于每台路由器都必须在将从邻居学到的路由转发给其它路由器之前，运行路由算法，所以网络的规模越大，其收敛速度越慢。
+链路状态路由协议均使用了强健的SPF算法，如OSPF的dijkstra，不易产生路由环路，或是一些错误的路由信息。路由器在转发链路状态包时（描述链路状态、拓扑变化的包），没必要首先进行路由运算，再给邻居进行发送，从而加快了网络的收敛速度。
+
+距离矢量路由协议，更新的是“路由条目”！一条重要的链路如果发生变化，意味着需通告多条涉及到的路由条目！
+链路状态路由协议，更新的是“拓扑”！每台路由器上都有完全相同的拓扑，他们各自分别进行SPF算法，计算出路由条目！一条重要链路的变化，不必再发送所有被波及的路由条目，只需发送一条链路通告，告知其它路由器本链路发生故障即可。其它路由器会根据链路状态，改变自已的拓扑数据库，重新计算路由条目。
+距离矢量路由协议发送周期性更新、完整路由表更新（periodic & full）
+而链路状态路由协议更新是非周期性的（nonpewww.bfblw.com riodic），部分的（partial）
+
+AS
+一个AS是一组共享相似的路由策略并在单一管理域中运行的路由器的集合。一个AS可以是一些运行单个IGP（内部网关协议）协议的路由器集合，也可以是一些运行不同路由选择协议但都属于同一个组织机构的路由器集合。不管是哪种情况，外部世界都将整个AS看作是一个实体。
+
+链路状态协议的步骤：
+步骤1：每台路由与他的邻居间建立联系，这种联系叫做邻接关系。
+步骤2：每台路由向每个邻居发送链路状态通告(LSA)，有时也叫链路状态报文(LSP)。每台链路都会生成一个LSA，LSA用于标识这条链路、链路状态、路由器接口到链路的代价度量值以及链路所连接的所有邻居。每个邻居收到公告后要依次向他的邻居转发这些通告（泛洪）
+步骤3：每台路由要在数据库中保存一份所收到的LSA，如所有工作正常所有路由的数据库应该是相同的。
+步骤4：完整的拓扑数据库也叫做链路状态库。
+
+链路状态协议的工作方式 
+工作方式： 
+1.发送HELLO包，建立邻接关系 
+2.同步链路状态数据库 
+3.使用SPF算法生成最短路径优先树 
+4.将计算结果写入路由表 
+在链路状态路由协议中，所有路由器所记录的链路数据库都是一致的 
+
+OSPF和IS-IS协议被归类到链路状态路由协议中.链路状态路由协议在一个特定的区域(area)里从邻居处收集网络信息,一旦路由信息都被收集齐以后,每个路由器开始通过使用Dijkstra算法(SPF)独立计算到达目标网络的最佳路径。
+
+距离矢量路由选择协议和链路状态路由选择协议比较
+距离矢量    链路状态
+-- a 定期地从所有接口将整个路由选择表发送出去（间隔通常很短）；发送触发更新以反映网络中变化   
+   b  检测到网络发生变化后发送增量更新。OSPF管理集每隔30分钟发送一次摘要信息，而不管此时是否已发送了增量更新
+-- a 通过使用广播地址将更新发送给当前链路上的所有路由器 
+   b 通常使用多播地址将更新发送给路由选择域中的所有路由器
+-- a 使用一个基于远程网络呢当前路由器有多远的度量值 
+   b 使用复杂的度量值，在OSPF 和IS-IS 中为成本
+-- a 根据从邻居那里获悉的信息来了解网络 
+   b 根据从区域中的所有路由器那里获悉的信息来了解网络
+
+-- a 每台路由器都有一个路由选择表，它是从当前路由器的角度看到的网络信息数据库     
+   b 区域中所有路由器的拓朴数据库都相同；每台路由器根据拓朴数据库建立的路由选择表更不相同
+-- a 用贝尔曼-福特算法来计算最佳路径    
+   b 用DIJKSTRA算法
+-- a 占用的路由器资源不多，但占用大量的网络资源 
+   b 占用大量的路由器资源，但占用的网络资源较少
+-- a 维护一个域中所有已知的路由 
+   b 使用区域组成的层次设计，支持汇总并具有可扩展性
+-- a 对网络编址方案没有任何限制 
+   b 为提高协议的使用效率，编址方案反映网络的层次设计
+-- a 汇聚速度慢，因为有关变化的信息必须间接地传遍整个网络。有关变化的信息到达网络的远端之前到，中间的所有路由器都必须更新其路由选择表   
+   b 汇聚速度快，因为更新立刻传遍整个网络
+
