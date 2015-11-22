@@ -1,0 +1,213 @@
+云计算的分类
+
+l IaaS(Infrastructure as a Service，基础架构即服务)  -- virtual PC hardware
+通过互联网提供了数据中心、基础架构硬件和软件资源。IaaS可以提供服务器、操作系统、磁盘存储、数据库和/或信息资源。最高端IaaS的代表产品是亚马逊的AWS(Elastic Compute Cloud)
+
+2 paas(Platform as a Service，平台即服务)提供了基础架构，-- virtual OS, virtual platform
+软件开发者可以在这个基础架构之上建设新的应用，或者扩展已有的应用
+Google的App Engine和微软的Azure(微软云计算平台)都采用了paas的模式。这些平台允许公司创建个性化的应用，也允许独立软件厂商或者其他的第三方机构针对垂直细分行业创造新的解决方案。
+
+3 SaaS(Software as a Service，软件即服务) -- virtual software 
+是最为成熟、最出名，也是得到最广泛应用的一种云计算。大家可以将它理解为一种软件分布模式，在这种模式下，应用软件安装在厂商或者服务供应商那里，用户可以通过某个网络来使用这些软件，通常使用的网络是互联网。这种模式通常也被称为"随需应变(on demand)"软件，这是最成熟的云计算模式，因为这种模式具有高度的灵活性、已经证明可靠的支持服务、强大的可扩展性，因此能够降低客户的维护成本和投入，而且由于这种模式的多宗旨式的基础架构，运营成本也得以降低。Salesforce.com、NetSuite、Google的Gmail和SPSCommerce.net都是这方面非常好的例子。
+
+
+
+IOMMU简介
+
+
+随着虚拟化技术逐渐升温，Intel和AMD近来支持了IOMMU技术。而Solaris对IOMMU技术在SPARC平台上的支持则可能要追溯到它们诞生的时候了。Solaris去年已经支持了x86平台上的IOMMU。
+
+早期Solaris在SPARC平台上对IOMMU的支持主要有两个原因，一个是对老设备的支持，另外一个是对scatter/gather的支持。要在64位系统上支持32位设备，比如说网卡，如果没有IOMMU，就需要在物理内存底端，也就是32位设备能够访问到的地方设置一个叫做"bounce buffers"的东西，如果设备要访问高端内存，操作系统就要在高端内存和"bounce buffers"之间做一个拷贝。带来的性能影响显而易见。如果有了IOMMU，这个问题就迎刃而解了。在设备驱动做DMA邦定的时候，系统返回给驱动的不再是物理地址，而是内核空间的某个地址（有的书上叫做总线地址），传输的时候，这个内核空间地址会经由IOMMU单元，IOMMU将这个地址转换为物理地址。scatter/gather并不会带来性能上的好处，但是会简化设备驱动程序。例如网卡驱动在发送包的时候，DMA邦定后，系统可能会返回给设备驱动多个不连续的物理地址，Solaris叫做cookie。这样的话，每一个cookie都需要占用一个发送描述符。如果系统支持IOMMU的话，系统只会返回给设备驱动一个cookie。当然了有专家提醒，因为这个原因，如果设备驱动是在没有IOMMU的情况下开发的，在支持IOMMU的系统上是没有问题的。但反之不然。
+
+x86平台上的IOMMU除了上述功能外还加入了对虚拟化的支持。简单来说有两个功能，一个DMA Remapping, 两外一个是Interrupt Remapping。DMA Remapping采用了多级页表机制，和MMU差不多。不过在转换前，IOMMU可以通过发出转换请求的PCI设备的Bus/Device/Function号来判断该设备是不是属于某一个domain。我们知道，有MMU，必定有TLB。所以有IOMMU，也肯定会有IOTLB。由于IOTLB的特殊性(TLB只服务于CPU，并且同时只有一个线程访问。而IOTLB则会有多个I/O设备同时访问)，PCI Express最近有一个草案，叫做ATS(Address Translation Services)。主要思想就是为了加快转换，避免集中式的IOTLB带来性能上的影响，在每个PCI Express设备中加入转换用的cache。具体细节可以参考PCI-SIG上的文档。对于后者，根据Solaris PSARC文档知道Solaris当前并没有实现。对于MSI/MSI-X来说，中断是由对特定地址的内存写来完成的。其中的address/data已将中断所需的信息告诉给了Root Complex，例如中断向量号，中断类型等等。Interrupt Remapping修改了data中的信息，现在data中只保存一个类似索引一样的东西，用来在Interrupt Remapping Table中寻址的。找到了对应IRTE(Interrupt Remapping Table Entry)，也就找到了中断所需的信息。当然了有硬件table，就有cache。
+
+
+
+Intel VT-d，VMDq (Virtual Machine Direct Queue)技术是基于网卡硬件加速技术，提高虚拟化环境下网络I/O性能。
+VMDq网卡实现了二层交换机部分功能——数据包分拣和分类，轮询传输，传统模式下由软件交换机实现
+VMDq网卡上通过MAC地址或者VLAN标记，把数据包发送到指定的虚拟机队列中去（这堆队列叫做pool）
+最后VMM软件只需要非常简单的数据复制工作就可以完成虚拟交换机的任务。从而极大地提升了虚拟化网络效率。 
+VMDq本质上数据转发平面卸载到网卡，网卡完成部分软件交换机功能
+
+
+
+VT-d技术提供了不同的虚拟机直接使用不同的网卡的可能性
+vt-d 每个虚拟机直接操作一个网卡
+
+多个虚拟机共用一块或者数块网卡仍然是绝大多数情况
+因为这样的缘故，实际上所有的提供上网能力的虚拟机软件都内置了一个虚拟交换机，大部分还在这个基础上提供了路由器的功能，作用就是和真实的交换机/路由器一样，将多台虚拟机连成一个或者多个网络：
+VMDq实际上将这个虚拟交换机的一部分功能用硬件进行加速
+VMDq实际上实现了一个半软半硬的虚拟交换机，和原有的纯软件方案相比，新的方案提供了更高的性能、更低的资源占用率，它怎么实现的呢？
+　VMDq技术提供了一个属于ISO OSI 9层网络模型中的第二层的分类/排序引擎实现了交换机的部分功能，为了提供合适的性能，它必须使用到一堆缓存队列，因此支持VMDq的网卡通常也支持RSS接收方扩展功能
+　　在支持VMDq的网卡上，用硬件实现了一个Layer 2分类/排序器，通过MAC地址或者VLAN来讲数据包发送到指定的虚拟机队列中去(这堆队列叫做pool)，最后的VMM软件只需要非常简单的数据复制工作就可以完成虚拟交换机的任务。从而极大地提升了虚拟化网络效率。
+　　支持VMDq队列的网卡通常也支持RSS队列，例如Intel 82576EB网卡支持8个虚拟机队列，支持16个RSS队列，它们实质上都是16个发送/接收队列对的划分，另外意味着，每个虚拟机可以分配到两个发送/接收队列对。
+
+
+Both Virtual Machine Device Queues (VMDq) and SR-IOV are technologies to improve the network performance for virtual machines (VMs) and to minimize the overhead and CPU bottlenecks on a VM manager such as the Hyper-V Windows Server management partition. However, they do it in different ways.
+
+With VMDq, the VM manager can assign a separate queue in the network adapter to each VM, which removes overhead on the virtual switch sorting and routing for where the packets need to go. However, the VM manager and the virtual switch still have to copy the traffic from the VMDq to the VM, which, for Hyper-V, travels over the kernel-mode memory bus.
+
+Additionally because there are multiple queues, the incoming load can be spread over multiple processor cores removing any potential processing bottleneck. VMDq reduces the work on the virtual switch and enables better scalability, but the traffic still flows through the virtual switch and over normal data transports (VMBus) as shown in the screen shot below.
+
+VMDq
+VMM在服务器的物理网卡中为每个虚机分配一个独立的队列，这样虚机出来的流量可以直接经过软件交换机发送到指定队列上，软件交换机无需进行排序和路由操作。
+但是，VMM和虚拟交换机仍然需要将网络流量在VMDq和虚机之间进行复制。
+data from card -- > vmm / l2 virtual switch --> vm 
+l2 virtual switch --> do not sort/route
+
+Intel VT-d，VMDq (Virtual Machine Direct Queue)技术是基于网卡硬件加速技术，提高虚拟化环境下网络I/O性能。
+VMDq网卡实现了二层交换机部分功能——数据包分拣和分类，轮询传输，传统模式下由软件交换机实现
+VMDq网卡上通过MAC地址或者VLAN标记，把数据包发送到指定的虚拟机队列中去（这堆队列叫做pool）
+最后VMM软件只需要非常简单的数据复制工作就可以完成虚拟交换机的任务。从而极大地提升了虚拟化网络效率。 
+VMDq本质上数据转发平面卸载到网卡，网卡完成部分软件交换机功能
+
+
+
+SR-IOV works similarly to VMDq, but instead of creating a separate queue for each VM, it actually creates a separate Virtual Function (VF) that acts like a separate network device for each VM. The VM communicates directly with it, completely bypassing the virtual switch and any load-copying data on the VM manager, since SR-IOV uses Direct Memory Accesss (DMA) between the VF and the VM.
+SR-IOV offers the best network performance but requires support on the hypervisor, motherboard, and network adapter and might affect portability of VMs between hardware capable of using SR-IOV and hardware incapable of using SR-IOV.
+
+SR-IOV
+对于SR-IOV来说，则更加彻底，它通过创建不同虚拟功能（VF）的方式，呈现给虚拟机的就是独立的网卡，因此，虚拟机直接跟网卡通信，不需要经过软件交换机。
+VF和VM之间通过DMA进行高速数据传输。
+SR-IOV的性能是最好的，但是需要一系列的支持，包括网卡、主板、VMM等。
+data from card (VF)-->  DMA --> VM
+do not need l2 virtual switch
+ 
+SR-IOV是内嵌在以太网卡内部的具有完整功能二层交换机，是基本网络转发平面
+由CPU的VMM管理二层交换机
+交换机支持广播
+可实现更加数据分拣、分类与安全等控制平面
+PCI管理 (PCIM)与CPU虚拟管理器集成
+PCI Mgr (SR PCIM)完成给每个虚拟机分配一个单独的虚拟功能号VF（Virtual Function），最大支持256个功能号
+VF转发需要ARI（Alternative Route Identifiers ）支持
+虚拟化软件交换机完成初始资源（CPU、内存和IO虚拟）分配管理，保留基本网络控制平面
+老版本虚拟客户机或虚拟机飘移还需要虚拟管理平台的软件交换机
+建立数据转发连接后，虚拟机虚拟网卡之间通过VF直接转发数据，无需经过主机软件交换机
+需要主机BIOS支持
+建立和分配SR-IOV的PCI设备内存空间资源
+需要VT-d 和IOMMU支持
+VT-d完成虚拟机DMA地址与物理地址转换
+IOMMU大块内存数据映射复制
+
+SR-IOV虚拟化原理总结
+虚拟化之一
+虚拟机虚拟网卡驱动程序（VF）不是真正网卡驱动
+但可以配置MAC地址、VLAN标记、DMA描述符和专门IO资源
+虚拟化之二
+虚拟机虚拟网卡与PCI功能号一一对应
+虚拟网卡地址虚拟化即MAC地址到功能号一一虚拟对应
+PCI总线数据转发平面通过ARI地址（与功能号对应）收发
+虚拟化之三
+芯片组VT-d功能，DMA内存空间地址虚拟化
+完成虚拟功能号之虚拟DMA地址到物理地址映射，页面映射
+SR-IOV是基于原有CPU的VMM基础之上，再与PCI-E无缝整合
+
+
+ 
+normal
+
+vm1  vm2
+|   |
+l2 virtual switch -- vmm
+ |
+tx/rx queue  --  netcard
+
+ 
+vmdq
+
+vm1  vm2
+|   |
+l2 virtual switch -- vmm
+ |
+tx/rx queue1 | tx/rx queue2    --  netcard
+
+
+SR-IOV
+
+vm1  vm2
+|    |
+|	 |  --	l2 virtual switch -- vmm
+|    |
+VF1  | VF2   
+   PF     --  netcard
+
+
+tun/tap 虚拟网卡
+tun虚拟点对点设备
+tap虚拟ehternet device
+tun/tap驱动程序实现了虚拟网卡的功能，tun表示虚拟的是点对点设备，tap表示虚拟的是以太网设备，这
+两种设备针对网络包实施不同的封装。利用tun/tap驱动，可以将tcp/ip协议栈处理好的网络分包传给任何一
+个使用tun/tap驱动的进程，由进程重新处理后再发到物理链路中。
+
+核心态和用户态数据的交互
+socket
+procfs / sysfs
+/dev/devicename device file -- call the device driver
+
+Tun/tap驱动程序中包含两个部分，一部分是字符设备驱动，还有一部分是网卡驱动部
+分。利用网卡驱动部分接收来自TCP/IP协议栈的网络分包并发送或者反过来将接收到的网
+络分包传给协议栈处理，而字符驱动部分则将网络分包在内核与用户态之间传送，模拟物
+理链路的数据接收和发送。Tun/tap驱动很好的实现了两种驱动的结合。
+
+tun/tap -- 1 char driver -- user space to kernel space
+           2 nic driver -- analog nic driver ,  send/receive  package to/from ipstack 
+
+Tun/tap设备提供的虚拟网卡驱动，从tcp/ip协议栈的角度而言，它与真实网卡驱动并没有
+区别。从驱动程序的角度来说，它与真实网卡的不同表现在tun/tap设备获取的数据不是
+来自物理链路，而是来自用户区，Tun/tap设备驱动通过字符设备文件来实现数据从用户
+区的获取。发送数据时tun/tap设备也不是发送到物理链路，而是通过字符设备发送至用
+户区，再由用户区程序通过其他渠道发送。
+
+
+normal
+ 
+ipstack 
+ |
+ |
+real eth driver
+ |
+eth device
+ | 
+link layer / physical layer  
+
+tun/tap
+ipstack
+ |
+ |
+tun/tap driver
+ |
+tun/tap char device
+ |
+user space
+ 
+发送过程：
+使用tun/tap网卡的程序经过协议栈把数据传送给驱动程序，驱动程序调用注册好的
+hard_start_xmit函数发送，hard_start_xmit函数又会调用tun_net_xmit函数，其中skb
+将会被加入skb链表，然后唤醒被阻塞的使用tun/tap设备字符驱动读数据的进程，接着
+tun/tap设备的字符驱动部分调用其tun_chr_read()过程读取skb链表，并将每一个读到的
+skb发往用户区，完成虚拟网卡的数据发送。
+
+接收数据的过程：
+当我们使用write()系统调用向tun/tap设备的字符设备文件写入数据时，tun_chr_write函
+数将被调用，它使用tun_get_user从用户区接受数据，其中将数据存入skb中，然后调用
+关键的函数netif_rx(skb) 将skb送给tcp/ip协议栈处理，完成虚拟网卡的数据接收。
+
+  write                  用户态                        read
+--------------------------------------------------------------------
+
+ tun_chr_write                                         tun_chr_read  
+                     tcp/ip 协议栈
+ tun_get_user                                     +--->skb_dequeue  
+                     hard_start_xmit              |
+ copy_from_user                                   |    tun_put_user
+                     tun_net_xmit                 | 
+ alloc_skb                                        |    copy_to_user
+                     skb_queue_tail               | 
+ netif_rx                                         |
+                             skb                  |
+                             skb------唤醒或通知--+
+                             skb
+							 skb
+							 skb
+							 
+
