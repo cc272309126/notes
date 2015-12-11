@@ -258,3 +258,538 @@ Linux 会将 PCI 的相关信息保存在一个文件中，从而方便用户的
 我们通常会使用 lspci 命令来查看系统中的 PCI 设备，这条命令就是从 devices 文件中解析相应的字段来显示的。
 
 
+
+
+本文主要描述linux kernel进行pci总线扫描，linux kernel代码基于版本2.6.37
+1. 域
+最先需要说明一个概念--域
+百度百科：域之原义指地方的范围，后逐渐演变为数学、生物、科技等学科的某类单位的分类词语。
+域英文叫DOMAIN (a set of websites on the Internet which end with the same group of letters,for exemple'.com','org'-------《牛津高阶英汉双解词典》）
+出现在本文中，意义要窄一些，认为域是一个使用同一编址方式的范围。
+比如：
+pci域，使用pci地址进行寻址
+x86域，使用x86物理地址进行寻址
+域有主导者，访问都通过它进行
+pci域，主导者是pci root，如果需要访问一个pci设备，就需要通过主导者pci root进行，它能识别的地址是pci地址
+x86域，主导者是x86 cpu，如果需要访问一个内存，就需要通过主导者x86 cpu进行，它能识别的地址是x86物理地址
+如果引申一下有物理地址，线性地址，逻辑地址，虚拟地址，在另一篇文章中有提到。
+本文中将的是pci域，所以所有的寻址都是使用pci地址
+
+2. pci总线
+简单的介绍一下pci，有意愿的话，可以认真看看pci协议，到处都有得下，英文的。
+2.1 pci设备
+pci有三种设备，有一种叫cardbus没接触过不提，所以认为两种，普通设备和桥设备
+普通设备的功能是系统需要的具体功能，具体功能最终也会归到数据传输，数据处理上面去。
+如果一个pci设备是这么组成的
+pci总线接口 -- 内存 -- 网络数据处理器 -- 网络接口
+网络数据通过网络接口进到网络数据处理器，处理后放到pci设备的内存上，再通过pci总线接口将数据发送到pci总线上，于是另一个pci设备就能够获取网络数据，反方向就是发送网络数据
+很明显，这个pci设备就是一个pci网卡
+类似的
+pci总线接口 -- 内存 -- 视频数据处理器 -- 视频接口
+一个pci显卡
+pci总线接口 -- 内存 -- 音频数据处理器 -- 音频接口
+一个pci声卡
+
+桥设备的功能是扩展pci总线，根据pci协议，一个总线上支持32个dev，每个dev支持8中功能，数量不够多，扩展功能是必要的。
+命令lspci -t查看拓扑
+-[0000:00]-+-00.0
+           +-02.0
+           +-1b.0
+           +-1c.0-[20]--
+           +-1c.1-[3f]----00.0
+           +-1d.0
+           +-1d.1
+           +-1d.2
+           +-1d.3
+           +-1d.7
+           +-1e.0-[05]----04.0
+           +-1f.0
+           +-1f.1
+           \-1f.2
+pci总线0下有多个设备
+普通设备00.0, 02.0, 1b.0, 1d.0-7, 1f.0-2
+桥设备1c.0, 1c.1, 1e.0
+桥1c.0扩展总线20, 1c.1扩展总线3f, 1e.0扩展总线05
+总线20下无设备，总线3f下有设备3f:00.0，总线05下有设备05:04.0
+
+2.2 pci配置空间
+pci是一种总线，特点是灵活可配置，因为它有一个专门的区域叫配置空间。
+配置空间通过io总线访问，x86是0xCF8,0xCFC，一个是控制端口一个是数据端口
+命令可查看
+sh-4.1# cat /proc/ioports 
+...
+0cf8-0cff : PCI conf1
+...
+桥设备和普通设备的配置空间内容不一样
+桥设备的配置空间需要说明pci总线的拓扑，内存映射的地址范围等等
+普通设备的配置空间需要说明该设备内存映射的地址范围，pci的中断号等等
+讲配置空间的网上有很多很优秀的文章，不贴过来了
+
+2.3 pci内存映射空间
+考虑一个pci声卡
+pci总线接口 -- 内存 -- 音频数据处理器 -- 音频接口
+音频数据处理器处理完的数据存放到pci设备的内存中，如何在pci总线上访问到这块内存从而获取其中的音频数据呢？
+前面说pci配置空间说明内存映射空间地址范围，即将这块内存映射到pci总线域的哪块地址，这样在pci总线域中访问这块地址就是访问这块内存
+内存映射空间一般有一个或者多个，看一个真实的显卡
+00:02.0 VGA compatible controller: Intel Corporation 82945G/GZ Integrated Graphics Controller (rev 02) (prog-if 00 [VGA controller])
+        Subsystem: Hewlett-Packard Company Device 3010
+        Flags: bus master, fast devsel, latency 0, IRQ 16
+        Memory at e0400000 (32-bit, non-prefetchable) [size=512K]
+        I/O ports at 20c0 [size=8]
+        Memory at d0000000 (32-bit, prefetchable) [size=256M]
+        Memory at e0480000 (32-bit, non-prefetchable) [size=256K]
+        Expansion ROM at <unassigned> [disabled]
+        Capabilities: <access denied>
+        Kernel driver in use: i915
+        Kernel modules: i915
+这里面的信息都是从配置空间获取的，可以看到有4个内存映射空间
+        Memory at e0400000 (32-bit, non-prefetchable) [size=512K]
+        I/O ports at 20c0 [size=8]
+        Memory at d0000000 (32-bit, prefetchable) [size=256M]
+        Memory at e0480000 (32-bit, non-prefetchable) [size=256K]
+只是第二个有些特殊是io port的映射区间，另外的三个都是真实的内存映射区间，第三个对应的就是显卡上的256MB显存
+
+3. 扫描过程
+经过前面内容，可以猜想pci设备的初始化流程应该是
+a. 通过io总线配置pci配置空间
+b. 通过io总线读取pci配置空间信息，获取内存映射空间的映射地址信息
+c. 通过读写内存映射空间实现数据传输
+看上去显得很简单，但是简单的说就是这么简单
+如果只有一个总线，下面又只挂了一个pci设备，那么我认为上面的流程及足够了，上面的流程也是pci驱动初始化pci设备的基本流程。
+由于大量的pci桥和pci普通设备有可能出现在pci总线上，所以实际情况比这个复杂
+3.1 BIOS pci 扫描
+最先进行pci扫描的是x86上的BIOS，扫描的结果是各个pci普通设备和pci桥都被配置完成，但是这种配置有可能是不能用的。
+原因需要回到域的概念，简单的考虑，x86系统中存在两个域，x86域和pci域，由于x86系统的特殊性，两个域被设计成对等映射的关系。
+也就是说，虽然x86域中使用x86地址进行访问，pci域中使用pci地址进行访问，但是两者对同一个实体的地址是相等的。这样带来的问题是两个域的地址不能重合，需要分开。
+命令cat /proc/iomem可查看
+00000000-00000fff : reserved
+00001000-0009fbff : System RAM
+0009fc00-0009ffff : reserved
+000a0000-000bffff : Video RAM area
+000c0000-000c7fff : Video ROM
+000cd400-000e7fff : pnp 00:0e
+000e8000-000fffff : reserved
+  000f0000-000fffff : System ROM
+00100000-7f7c82ff : System RAM
+  00400000-007aca75 : Kernel code
+  007aca76-00a1cf6f : Kernel data
+  00aa8000-00c2b8bf : Kernel bss
+7f7c8300-7fffffff : reserved
+80000000-801fffff : PCI Bus 0000:20
+80200000-803fffff : PCI Bus 0000:20
+80400000-805fffff : PCI Bus 0000:3f
+80600000-806fffff : PCI Bus 0000:05
+  80600000-8061ffff : 0000:05:04.0
+d0000000-dfffffff : 0000:00:02.0
+e0400000-e047ffff : 0000:00:02.0
+e0480000-e04bffff : 0000:00:02.0
+e04c0000-e04c3fff : 0000:00:1b.0
+  e04c0000-e04c3fff : ICH HD audio
+e04c4000-e04c43ff : 0000:00:1d.7
+  e04c4000-e04c43ff : ehci_hcd
+e0500000-e07fffff : PCI Bus 0000:3f
+  e0500000-e050ffff : 0000:3f:00.0
+    e0500000-e050ffff : tg3
+e0800000-e0afffff : PCI Bus 0000:05
+  e0a00000-e0a000ff : 0000:05:04.0
+    e0a00000-e0a000ff : r8169
+f0000000-f3ffffff : reserved
+  f0000000-f3ffffff : pnp 00:0e
+    f0000000-f1ffffff : PCI MMCONFIG 0000 [bus 00-1f]
+fec00000-fed3ffff : reserved
+  fec00000-fec003ff : IOAPIC 0
+  fec01000-fed3ffff : pnp 00:0e
+fed45000-ffffffff : reserved
+  fee00000-fee00fff : Local APIC
+后面一段基本都是pci设备，前面一段基本都是ram，两者没有重合部分
+回到BIOS配置可能不可用的问题，如果linux kernel将系统内存也安排到了BIOS配置pci的地址区域，出现重合，系统就乱了。
+
+3.2 kernel扫描
+既然BIOS配置可能不可用，那么只能kernel自己重新扫一次，合理安排pci地址空间和x86空间的地址了。
+内核有个配置选项与此相关
+CONFIG_PCI_BIOS
+CONFIG_PCI_MMCONFIG
+CONFIG_PCI_DIRECT
+网上有相关说明，不贴了
+3.2.1 扫描流程
+cat System.map | grep pci | grep __initcall 
+ffffffff8170c818 t __initcall_pci_reboot_init1
+ffffffff8170c8c8 t __initcall_pcibus_class_init2
+ffffffff8170c8d0 t __initcall_pci_driver_init2
+ffffffff8170c918 t __initcall_acpi_pci_init3
+ffffffff8170c940 t __initcall_pci_arch_init3
+ffffffff8170c9b8 t __initcall_pci_slot_init4
+ffffffff8170c9d0 t __initcall_acpi_pci_root_init4
+ffffffff8170c9d8 t __initcall_acpi_pci_link_init4
+ffffffff8170ca48 t __initcall_pci_subsys_init4
+ffffffff8170caf0 t __initcall_pcibios_assign_resources5
+ffffffff8170cb18 t __initcall_pci_apply_final_quirks5s
+ffffffff8170cb28 t __initcall_pci_iommu_initrootfs
+ffffffff8170ced0 t __initcall_pci_proc_init6
+ffffffff8170ced8 t __initcall_pcie_portdrv_init6
+ffffffff8170cfa8 t __initcall_serial8250_pci_init6
+ffffffff8170cfd0 t __initcall_hsu_pci_init6
+ffffffff8170d010 t __initcall_ide_scan_pcibus6
+ffffffff8170d410 t __initcall_pci_resource_alignment_sysfs_init7
+ffffffff8170d418 t __initcall_pci_sysfs_init7
+ffffffff8170d440 t __initcall_pci_mmcfg_late_insert_resources7
+这些都是在kernel启动过程中会执行的pci相关函数，有些明显不是通用的可以忽略
+整个扫描流程分为两部分 扫描设备 和 分配资源
+3.2.1.1 扫描设备
+从主桥开始扫
+pcibios_scan_root(0)
+>>> pci_scan_bus_parented()
+    >>> pci_scan_child_bus()
+        >>> for (devfn = 0; devfn < 0x100; devfn += 8)
+pci_scan_slot(bus, devfn);
+前面有说一个总线下支持32个dev，每个dev支持8个fn，这里就是扫描总线下所有的dev
+所有的dev有普通pci设备，还有pci桥
+pci桥会扩展出另一个总线号，其下可能挂有其他设备，所以还需要扫描找到的pci桥
+            >>> pci_scan_single_device()
+                >>> pci_scan_device()
+                    >>> pci_setup_device()
+                        >>> pci_read_irq()
+                        >>> pci_read_bases()
+                            >>> __pci_read_base()
+                                >>> pci_size()
+获取pci设备信息，中断号，内存映射区域大小和地址等等
+                >>> pci_device_add()
+                    >>> list_add_tail(&dev->bus_list, &bus->devices)
+扫到的设备全存放在bus->devices链表中，后面会有很多扫描依赖这个链表
+常见的比如：list_for_each_entry(dev, &bus->devices, bus_list)
+就是循环该bus下所有pci设备
+        >>> pci_scan_bridge()
+            >>> pci_find_bus()
+            >>> pci_add_new_bus()
+桥扩展出来的总线给一个新的总线号
+            >>> pci_scan_child_bus()
+递归扫描新扫到的pci桥
+这样是扫描到桥就往深处走，称深度优先扫描，将所有的pci设备扫描完毕，并获取内存映射区域信息
+
+3.2.1.2 分配资源
+从主桥开始
+__pci_bus_assign_resources()
+>>> pbus_assign_resources_sorted()
+    >>> __dev_sort_resources()
+        >>> pdev_sort_resources()
+            >>> pci_resource_alignment()
+                >>> resource_alignment()
+                    >>> resource_size()
+将bus下所有dev所需要占用的资源都放入一个链表上--head
+    >>> __assign_resources_sorted()
+        >>> assign_requested_resources_sorted()
+            >>> resource_size()
+            >>> pci_assign_resource()
+                >>> pci_resource_alignment()
+                >>> __pci_assign_resource()
+                    >>> pci_bus_alloc_resource()
+                    ### allocate a resource from a parent bus
+从bus所含资源中给链表head上所注明资源分配空间
+                        >>> allocate_resource()
+                            >>> find_resource()
+在制定范围内寻找合适的空间[min, max]
+min = (res->flags & IORESOURCE_IO) ? PCIBIOS_MIN_IO : PCIBIOS_MIN_MEM;
+max = PCIBIOS_MAX_MEM_32;
+匹配方式可看resource_clip(),移动最小匹配
+                            >>> __request_resource()
+分配
+                    >>> request_resource_conflict()
+                        ### request and reserve an I/O or memory resource
+                        >>> __request_resource()
+                    >>> pci_update_resource()
+                        >>> pci_resource_bar()
+更新配置空间
+        >>> adjust_resources_sorted()
+            >>> 
+>>> __pci_bus_assign_resources()
+### recursion
+>>> pci_setup_bridge()
+更新桥的配置空间，桥所包含地址范围
+    >>> __pci_setup_bridge()
+        >>> pci_setup_bridge_io()
+            >>> res = bus->resource[0]
+            >>> pcibios_resource_to_bus(bridge, &region, res)
+            ### write to io base and limit
+        >>> pci_setup_bridge_mmio()
+            >>> res = bus->resource[1]
+            >>> pcibios_resource_to_bus(bridge, &region, res)
+            ### write to mem base and limit
+        >>> pci_setup_bridge_mmio_pref()
+            >>> res = bus->resource[2]
+            >>> pcibios_resource_to_bus(bridge, &region, res)
+            ### write to pref mem base and limit
+
+下面只是列出较具体流程，代码就不贴了
+3.2.2 pci_reboot_init
+>>> dmi_check_system(pci_reboot_dmi_table)
+只有apple相关产品会做一些修正，不关心
+
+3.2.3 pcibus_class_init
+>>> class_register(&pcibus_class)
+    >>> release_pcibus_dev()
+        >>> pci_bus_remove_resources()
+注册pci class
+
+3.2.4 pci_driver_init()
+>>> bus_register(&pci_bus_type)
+    >>> bus_register(&pci_bus_type)
+        >>> pci_bus_match()
+            >>> pci_match_device()
+                >>> pci_match_id()
+                    >>> pci_match_one_device()
+                    ### id->vendor == dev->vendor, id->device == dev->device
+        >>> pci_uevent()
+            >>> add_uevent_var()
+            ### add key value string to the environment buffer
+        >>> pci_device_probe()
+            >>> pci_match_device()
+            >>> pci_call_probe()
+                >>> local_pci_probe()
+                    >>> ddi->drv->probe(ddi->dev, ddi->id)
+        >>> pci_device_remove()
+            >>> drv->remove(pci_dev)
+        >>> pci_device_shutdown()
+            >>> drv->shutdown(pci_dev)
+            >>> pci_msi_shutdown(pci_dev)
+            >>> pci_msix_shutdown(pci_dev)
+        >>> pci_dev_attrs
+        >>> pci_bus_attrs
+            >>> bus_rescan_store()
+                >>> b = pci_find_next_bus()
+                >>> pci_rescan_bus(b)
+注册pci驱动，但是这里注意pci_rescan_bus(b)在pci hotplug中是很有用的，另一篇文章有提到
+
+3.2.5 acpi_pci_init()
+从ACPI获取信息，ACPI还是很复杂的，可以简单看作一堆表示系统相关信息的表
+
+3.2.6 pci_arch_init()
+>>> pci_direct_probe()
+    >>> request_region(0xCF8, 8, "PCI conf1")
+这里就是保留io总线访问配置空间的资源，0xCF8 0xCFC
+>>> pci_mmcfg_early_init()
+    >>> __pci_mmcfg_init()
+        >>> acpi_sfi_table_parse(ACPI_SIG_MCFG, pci_parse_mcfg)
+        ### mmconfig address is coming from ACPI table
+MMCONFIG对于访问pcie设备配置空间很有作用，因为PCI的配置空间是256，而PCIE的配置空间是4K，多出的部分io总线访问不了，需要mmconfig进行访问
+            >>> pci_parse_mcfg()
+                >>> pci_mmconfig_add()
+        >>> pci_mmcfg_reject_broken()
+            >>> is_mmconf_reserved()
+        >>> pci_mmcfg_arch_init()
+>>> x86_init.pci.arch_init()
+    >>> pci_acpi_init()
+    ### about pci irq
+>>> pci_pcbios_init()
+    ​>>> pci_find_bios()
+    ### find BIOS32 0xe0000 - 0xfffff
+>>> pci_direct_init()
+    ### raw_pci_ops = &pci_direct_conf1 
+>>> dmi_check_pciprobe()
+>>> dmi_check_skip_isa_align()
+
+3.2.7 pci_slot_init()
+>>> pci_slots_kset = kset_create_and_add("slots", NULL, &pci_bus_kset->kobj)
+
+3.2.8 acpi_pci_root_init()
+>>> acpi_hest_init()
+>>> pci_acpi_crs_quirks()
+>>> acpi_bus_register_driver(&acpi_pci_root_driver)
+### about irq
+
+3.2.9 acpi_pci_link_init()
+>>> acpi_bus_register_driver(&acpi_pci_link_driver)
+### about irq
+
+3.2.10 pci_subsys_init()
+>>> pci_legacy_init()
+    >>> pci_root_bus = pcibios_scan_root(0)
+        >>> bus = pci_scan_bus_parented(NULL, busnum, &pci_root_ops, sd)
+            >>> b = pci_create_bus(parent, bus, ops, sysdata)
+            >>> b->subordinate = pci_scan_child_bus(b)
+            ### ...
+    >>> pci_bus_add_devices(pci_root_bus)
+        >>> pci_bus_add_device()
+        ### insert newly discovered PCI devices
+        >>> pci_bus_add_child()
+        ### add a child bus
+>>> pcibios_fixup_peer_bridges()
+>>> x86_init.pci.init_irq()
+>>> pcibios_init()
+    >>> pcibios_resource_survey()
+        >>> pcibios_allocate_bus_resources()
+        ### for PCI_BRIDGE_RESOURCES, for bridge
+            >>> pci_claim_resource()
+                >>> pci_find_parent_resource()
+                >>> request_resource_conflict()
+                    >>> __request_resource()
+            >>> pcibios_allocate_bus_resources()
+            ### recursion
+        >>> pcibios_allocate_resources()
+        ### from PCI_STD_RESOURCES to PCI_STD_RESOURCE_END
+            >>> pci_claim_resource()
+        >>> e820_reserve_resources_late()
+        >>> ioapic_insert_resources()
+            >>> insert_resource(&iomem_resource, ioapic_resources)
+
+3.2.11 pcibios_assign_resources()
+>>> pci_assign_unassigned_resources()
+    >>> __pci_bus_size_bridges()
+        >>> __pci_bus_size_bridges()
+        >>> pci_bridge_check_ranges()
+        >>> pbus_size_io()
+        >>> pbus_size_mem()
+    >>> __pci_bus_assign_resources()
+        >>> pbus_assign_resources_sorted()
+        >>> __pci_bus_assign_resources()
+        >>> pci_setup_bridge()
+            >>> __pci_setup_bridge()
+                >>> pci_setup_bridge_io()
+                >>> pci_setup_bridge_mmio()
+                >>> pci_setup_bridge_mmio_pref()
+    >>> pci_enable_bridges()
+    >>> pci_bus_dump_resources()
+
+3.3 kernel扫描关键的四个函数
+3.3.1 pci_scan_child_bus()
+>>> pci_scan_slot()
+### scan a PCI slot on a bus for devices
+    >>> pci_scan_single_device()
+        >>> pci_get_slot()
+        ### check devfn is exist or not under bus
+        >>> pci_scan_device()
+        ### check VID and DID to decide devfn is exist or not
+            >>> alloc_pci_dev()
+            >>> pci_setup_device()
+                >>> pci_fixup_device(pci_fixup_early, dev)
+                ### do early fixup here
+                >>> pci_read_bases()
+                ### read pci bar 0 - 5
+                    >>> __pci_read_base()
+                    ### read a pci bar for region and size
+        >>> pci_device_add()
+            >>> pci_fixup_device(pci_fixup_header, dev)
+            >>> list_add_tail(&dev->bus_list, &bus->devices)
+            ### scan all devices under one bus, then add them (dev->bus_list) to bus->devices
+>>> pci_iov_bus_range()
+>>> pcibios_fixup_bus()
+    >>> pci_read_bridge_bases()
+        >>> pci_bus_remove_resources(child)
+>>> pci_read_bridge_io(child)
+>>> pci_read_bridge_mmio(child)
+>>> pci_read_bridge_mmio_pref(child)
+        >>> pci_bus_add_resource()
+>>> pci_scan_bridge()
+### find a bridge, then want to find bus under the bridge in system.
+    >>> pci_find_bus()
+    ### find the bus
+        >>> pci_do_find_bus()
+            >>> pci_do_find_bus()
+            ### recursion
+    >>> pci_add_new_bus()
+    ### do not find the bus, so add a new one
+    >>> pci_scan_child_bus()
+    ### recursion
+    >>> pci_fixup_parent_subordinate_busnr()
+
+3.3.2 pci_bus_add_devices()
+>>> pci_bus_add_device()
+>>> pci_bus_add_devices()
+### recursion
+>>> pci_bus_add_child()
+
+3.3.3 __pci_bus_size_bridges()
+### if it is bridge, recursion
+>>> __pci_bus_size_bridges()
+### for bridge
+>>> pci_bridge_check_ranges()
+### check support 64bit or not
+>>> pbus_size_io()
+### calc io resource of all devices under this bus
+>>> pbus_size_mem()
+### calc mem resource of all devices under this bus
+
+3.3.4 __pci_bus_assign_resources()
+>>> pbus_assign_resources_sorted()
+    >>> __dev_sort_resources()
+        >>> pdev_sort_resources()
+            >>> pci_resource_alignment()
+                >>> resource_alignment()
+                    >>> resource_size()
+    >>> __assign_resources_sorted()
+        >>> assign_requested_resources_sorted()
+            >>> resource_size()
+            >>> pci_assign_resource()
+                >>> pci_resource_alignment()
+                >>> __pci_assign_resource()
+                    >>> pci_bus_alloc_resource()
+                    ### allocate a resource from a parent bus
+                        >>> allocate_resource()
+                            >>> find_resource()
+                            >>> __request_resource()
+                    >>> request_resource_conflict()
+                        ### request and reserve an I/O or memory resource
+                        >>> __request_resource()
+                    >>> pci_update_resource()
+                        >>> pci_resource_bar()
+        >>> adjust_resources_sorted()
+            >>> 
+>>> __pci_bus_assign_resources()
+### recursion
+>>> pci_setup_bridge()
+    >>> __pci_setup_bridge()
+        >>> pci_setup_bridge_io()
+            >>> res = bus->resource[0]
+            >>> pcibios_resource_to_bus(bridge, &region, res)
+            ### write to io base and limit
+        >>> pci_setup_bridge_mmio()
+            >>> res = bus->resource[1]
+            >>> pcibios_resource_to_bus(bridge, &region, res)
+            ### write to mem base and limit
+        >>> pci_setup_bridge_mmio_pref()
+            >>> res = bus->resource[2]
+            >>> pcibios_resource_to_bus(bridge, &region, res)
+            ### write to pref mem base and limit
+
+4. 总结
+linux pci 扫描流程
+a. BIOS先扫描，但是扫描的结果可能不能直接用。
+b. linux kernel扫描分两步，扫描设备和分配资源。
+c. 扫描设备会从主桥开始，按照深度优先方式扫描所有设备，如果遇到一个桥设备则扩展一个总线号，并对该总线进行扫描。
+d. 扫描会获取pci总线拓扑和各个设备所需要的资源信息。
+e. 分配资源也从主桥开始，按照深度优先方式扫描所有设备，并按需为设备分配资源和更新配置信息。
+f. 桥根据其下设备所分配的资源更新配置范围，以供pci总线路由。
+g. x86域的地址资源和pci域的地址资源是对等映射，所以分配需考虑到两者不能冲突。
+
+
+arch_initcall(pci_direct_init);
+arch_initcall(pci_pcbios_init);
+    raw_pci_ops = pci_bios_access
+    pci_probe |= PCI_BIOS_SORT;
+    pci_bios_present = 1;
+        
+1: 从pci bios 扫描
+2: 从acpi扫描
+
+pci_legacy_init
+    pcibios_scan_root
+        pci_scan_bus(busnum, &pci_root_ops, NULL);
+            pci_scan_bus_parented(NULL, busnum, pci_root_ops, NULL);
+                pci_scan_child_bus
+                    pci_scan_slot
+                        pci_scan_single_device
+                            pci_scan_device
+                                pci_setup_device
+                                    "%04x:%02x:%02x.%d"
+                            pci_scan_msi_device
+                                pci_find_capability(dev, PCI_CAP_ID_MSIX)
+                                pci_find_capability(dev, PCI_CAP_ID_MSI)
+                    pcibios_fixup_bus
+                    pci_scan_bridge
+                        pci_alloc_child_bus
+                        pci_scan_child_bus
+
+链表管理结构
+
+
+
+
