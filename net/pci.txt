@@ -792,4 +792,9 @@ pci_legacy_init
 
 
 
+pcie设备的配置空间相对于pci设备从256增大到4K，只有前256可以通过ioport方式读写，后面的内容则需要从MCONF空间读写。
+可通过cat /proc/iomem查看MCONF空间地址，我设备的MCONF空间定义为0x80000000.
+
+echo 1 > /sys/bus/pci/devices/0000:00:1e.0/rescan
+
 
