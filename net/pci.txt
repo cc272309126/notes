@@ -797,4 +797,17 @@ pcie设备的配置空间相对于pci设备从256增大到4K，只有前256可�
 
 echo 1 > /sys/bus/pci/devices/0000:00:1e.0/rescan
 
+pcibios_assign_resources
+    /* Don't touch classless devices and host bridges */
+    Don't touch IDE controllers and I/O ports of video cards!
+    /*
+     *  We shall assign a new address to this resource, either because
+     *  the BIOS forgot to do so or because we have decided the old
+     *  address was unusable for some reason.
+     */  
+    pci_assign_resource
+        pci_bus_alloc_resource
+            allocate_resource
+                find_resource
+                __request_resource
 
