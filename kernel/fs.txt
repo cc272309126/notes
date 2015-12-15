@@ -1,0 +1,115 @@
+
+metadata
+data
+write metadata --> not atomic operation  
+write data  --> not atomic operation
+
+
+日志的三个级别
+在很多日志文件系统（如：ext3, ReiserFS）中，可以选择三个级别的日志：回写（writeback）、顺序（ordered）和数据（data）。
+
+回写
+write data --> main fs | at the same time | write meta --> jour area
+write meta --> main fs
+在回写模式中，只有元数据被记录到日志中，数据被直接写入主文件系统。这种模式提供较好的性能，但有较大的风险。例如，在增大文件时，数据还未写入就发生崩溃，那么文件系统恢复后文件后面就可能出现垃圾数据。
+
+顺序
+write meta --> jour area
+write data --> main fs
+write meta --> main fs
+在顺序模式中，只有元数据被记录到日志中，但在日志被标记为提交前，数据会被写入文件系统。在这种模式下，如果在增大文件时，数据还未写入就发生崩溃，那么在恢复时这个事务会被简单的撤销，文件保持原来的状态。
+
+数据 
+write meta --> jour area
+write data --> jour area
+write meta --> main fs
+write data --> main fs
+在数据模式中，元数据和文件内容都先被写入日志中，然后在提交到主文件系统。这提高了安全性，但损失性能，因为所有数据要写入两次[1]。在这种模式下，如果在增大文件时，发生崩溃，那么可能有两种情况：
+
+日志完整：这时事务会被重新执行，修改会被提交到主文件系统
+日志不完整：这时主文件系统还未被修改，只需要简单放弃这个事务
+
+
+Data Mode
+=========
+There are 3 different data modes:
+
+* writeback mode
+In data=writeback mode, ext4 does not journal data at all.  This mode provides
+a similar level of journaling as that of XFS, JFS, and ReiserFS in its default
+mode - metadata journaling.  A crash+recovery can cause incorrect data to
+appear in files which were written shortly before the crash.  This mode will
+typically provide the best ext4 performance.
+
+* ordered mode
+In data=ordered mode, ext4 only officially journals metadata, but it logically
+groups metadata information related to data changes with the data blocks into a
+single unit called a transaction.  When it's time to write the new metadata
+out to disk, the associated data blocks are written first.  In general,
+this mode performs slightly slower than writeback but significantly faster than journal mode.
+
+* journal mode
+data=journal mode provides full data and metadata journaling.  All new data is
+written to the journal first, and then to its final location.
+In the event of a crash, the journal can be replayed, bringing both data and
+metadata into a consistent state.  This mode is the slowest except when data
+needs to be read from and written to disk at the same time where it
+outperforms all others modes.  Enabling this mode will disable delayed
+allocation and O_DIRECT support.
+
+(data is data, metadata is metadata)
+data=journal        All data are committed into the journal prior to being
+            written into the main file system.  Enabling
+            this mode will disable delayed allocation and
+            O_DIRECT support.
+
+data=ordered    (*) All data are forced directly out to the main file
+            system prior to its metadata being committed to the
+            journal.
+
+data=writeback      Data ordering is not preserved, data may be written
+            into the main file system after its metadata has been
+            committed to the journal.
+            
+
+
+    "mount -o journal=update"
+        Mounts a filesystem with a Version 1 journal, upgrading the
+        journal dynamically to Version 2.
+
+    "mount -o data=journal"
+        Journals all data and metadata, so data is written twice. This
+        is the mode which all prior versions of ext3 used.
+
+    "mount -o data=ordered"
+        Only journals metadata changes, but data updates are flushed to
+        disk before any transactions commit. Data writes are not atomic
+        but this mode still guarantees that after a crash, files will
+        never contain stale data blocks from old files.
+
+    "mount -o data=writeback"
+        Only journals metadata changes, and data updates are entirely
+        left to the normal "sync" process. After a crash, files will
+        may contain stale data blocks from old files: this mode is
+        exactly equivalent to running ext2 with a very fast fsck on reboot.
+        
+        
+
+data=writeback mode
+In data=writeback mode, ext3 doesn't do any form of data journaling at all, providing you with similar journaling found in the XFS, JFS, and ReiserFS filesystems (metadata only). As I explained in my previous article, this could allow recently modified files to become corrupted in the event of an unexpected reboot. Despite this drawback, data=writeback mode should give you the best ext3 performance under most conditions.
+
+journal metadata only
+
+data=ordered mode
+In data=ordered mode, ext3 only officially journals metadata, but it logically groups metadata and data blocks into a single unit called a transaction. When it's time to write the new metadata out to disk, the associated data blocks are written first. data=ordered mode effectively solves the corruption problem found in data=writeback mode and most other journaled filesystems, and it does so without requiring full data journaling. In general, data=ordered ext3 filesystems perform slightly slower than data=writeback filesystems, but significantly faster than their full data journaling counterparts.
+When appending data to files, data=ordered mode provides all of the integrity guarantees offered by ext3's full data journaling mode. However, if part of a file is being overwritten and the system crashes, it's possible that the region being written will contain a combination of original blocks interspersed with updated blocks. This is because data=ordered provides no guarantees as to which blocks are overwritten first, so you can't assume that just because overwritten block x was updated, that overwritten block x-1 was updated as well. Instead, data=ordered leaves the write ordering up to the hard drive's write cache. In general, this limitation doesn't end up negatively impacting people very often, since file appends are generally much more common than file overwrites. For this reason, data=ordered mode is a good higher-performance replacement for full data journaling.
+
+metadata + data == single unit --> a transaction
+write data , then write metadata --> to the disk
+journal metadata only
+
+
+data=journal mode
+data=journal mode provides full data and metadata journaling. All new data is written to the journal first, and then to its final location. In the event of a crash, the journal can be replayed, bringing both data and metadata into a consistent state.
+
+
