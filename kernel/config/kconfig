@@ -1,0 +1,15 @@
+symbolA depends on symbolB 
+    -- symbolA is an attribute of symbolB, only symbolB is open, symbolA can be present.
+symbolA select symbolB
+    -- symbolA need symbolB=y, when symbolA = y/m, symbolB must be y and symbolB will auto be y.
+
+config FB_CIRRUS
+depends on FB && (ZORRO || PCI)
+select FB_CFB_FILLRECT
+
+depends on indicates the symbol(s) must already be positively selected (=y) in order for this option to be configured. For example, depends on FB && (ZORRO || PCI) means FB must have been selected, and (&&) either ZORRO or (||) PCI. For things like make menuconfig, this determines whether or not an option will be presented.
+
+select positively sets a symbol. For example, select FB_CFB_FILLRECT will mean FB_CFB_FILLRECT=y. This fulfills a potential dependency of some other config option(s). Note that the kernel docs discourage the use of this for "visible" symbols (which can be selected/deselected by the user) or for symbols that themselves have dependencies, since those will not be checked.
+
+Reference: https://www.kernel.org/doc/Documentation/kbuild/kconfig-language.txt
+
