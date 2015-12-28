@@ -214,13 +214,26 @@ static void update_curr(struct cfs_rq *cfs_rq)
     curr->exec_start = now;
 }
 
+static void place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
+{
+    u64 vruntime = cfs_rq->min_vruntime;
+
+    if (initial) vruntime += sched_vslice_add(cfs_rq, se);  /* fork */
+
+    if (!initial) {                                         /* wake up */
+        vruntime -= sysctl_sched_latency;
+        vruntime = max_vruntime(se->vruntime, vruntime);
+    }
+
+    se->vruntime = vruntime;
+}
 
 ================================================
 Minimum virtual run time of CFS RunQueue (min_vruntime)
 ================================================
 What is min_vruntime?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Represents minimum run time of any task in the CFS run queue.
+Represents minimum run time of any task in the CFS run queue. -- runqueue中最小的vruntime, 但是实际上有的时候不是最小的。
 
 Where is stored?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -244,8 +257,25 @@ update_min_vruntime() is called from many places including
 (b) dequeue_entity(), which removes an entity from RB tree
     
 __update_curr()
+    队列的vruntime只有被tree上的某个节点的vruntime超出的时候，才更新
 dequeue_entity()
     update_min_vruntime()
+
+How is min_vruntime used?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+static inline s64 entity_key(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+    return se->vruntime - cfs_rq->min_vruntime;
+}
+
+static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+    ...
+    s64 key = entity_key(cfs_rq, se);
+    ...
+}
+
 
 How is min_vruntime updated?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
