@@ -327,4 +327,14 @@ sum_exec_runtime
 prev_sum_exec_runtime
 – When a process is taken to the CPU, its current sum_exec_runtime value is preserved in prev_exec_runtime.
     
-    
+static void check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
+{
+    unsigned long ideal_runtime, delta_exec;
+
+    ideal_runtime = sched_slice(cfs_rq, curr);  /* 4ms * ( weight / 1024 ) */
+    delta_exec = curr->sum_exec_runtime - curr->prev_sum_exec_runtime;
+    if (delta_exec > ideal_runtime)
+        resched_task(rq_of(cfs_rq)->curr);
+}
+
+
