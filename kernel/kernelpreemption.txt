@@ -41,6 +41,31 @@ page fault -x-> exception/system call/page fault
 interrupt --> interrupt/int3
 interrupt -x-> exception/system call/page fault
 
+
+interrupt / int3
+    -- interrupt 和 int3 同一个级别
+    -- interrupt 硬件中断 (包括 hard irq, soft irq)
+    -- int3 表面看是一个exception, 实际上是个调试中断 
+    -- 级别最高 
+    -- 可以嵌套在 exception/pagefault, systemcall 之上
+    -- 同一种interrupt不能嵌套，多个不同interupt可以嵌套，可以嵌套的其实只是中断下半部soft irq部分。上半部分hard irq ack不能嵌套。
+
+exception / page fault
+    -- exception 包括除了page fault, int3, double fault的其它异常
+    -- page fault 本质也是exception的一种，page fault和exception同级
+    -- 一次只能发生一个exception, excepction A里面发生exception B，则是double fault, 直接挂掉
+        exception 处理的函数中，不能page fault, page fault的处理函数中，不能exception.
+       总之, exception和另外一个exception不能嵌套， 一次只有一个exception.
+    -- interrupt/int3 可以嵌套在exception 之上，也就是说exception/page fault的处理函数过程中，可以发生interrupt/int3
+    -- exception/page fault可以嵌套在 system call之上， 也即是system call处理期间，可以发生 exception/page fault
+
+system call 
+    -- system call表面看是一种中断，但是他不是硬件中断，是软件中断。因此级别最低。interrupt / exception都是硬件机制。
+    -- system call和另外一个syste call不能嵌套。
+    -- system call期间可以发生page fault, 但是不能发生exception. 因为system call 是内核代码。
+    -- system call当然可以被 interrupt / int3 嵌套。
+
+
 preempt
 0|nmi|hardirq|softirq|preemptcount
 
