@@ -1,0 +1,28 @@
+134 
+135 static const struct watchdog_info wdt_info = {
+136     .identity = "VIA watchdog",
+137     .options =  WDIOF_CARDRESET |
+138             WDIOF_SETTIMEOUT |
+139             WDIOF_MAGICCLOSE |
+140             WDIOF_KEEPALIVEPING,
+141 };
+142 
+143 static const struct watchdog_ops wdt_ops = {
+144     .owner =    THIS_MODULE,
+145     .start =    wdt_start,
+146     .stop =     wdt_stop,
+147     .ping =     wdt_ping,
+148     .set_timeout =  wdt_set_timeout,
+149 };
+150 
+151 static struct watchdog_device wdt_dev = {
+152     .info =     &wdt_info,
+153     .ops =      &wdt_ops,
+154     .min_timeout =  1,
+155     .max_timeout =  WDT_TIMEOUT_MAX,
+156 };
+157 
+
+start
+stop
+settimeout
