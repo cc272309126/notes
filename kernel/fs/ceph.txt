@@ -1,0 +1,118 @@
+ceph
+
+组成
+OSD + OSD deamon
+Monitors
+
+存储集群客户端和每个Ceph的OSD守护进程使用CRUSH算法有效地计算有关数据位置的信息，而不必依赖于一个查找表。
+client + osd daemon --> crush --> location
+
+Ceph OSD守护进程储存所有的数据成为一个层面的命名对象（例如，没有目录层次结构）。对象的标识符，二进制数据和元数据组成的一组名称值对。语义是完全基于Ceph的客户端。例如，CephFS的使用元数据来存储文件属性，如文件的所有者，创建日期，最后修改日期，等等。
+整个集群的对象ID是唯一的，不仅仅在本地文件系统。
+
+Ceph的消除了集中式网关，使客户能够直接与Ceph的OSD守护进程进行互动。
+Ceph的OSD守护进程创建对象的副本，在其他Ceph的节点上，以确保数据的安全性和的高可用性。
+Ceph的还采用了集群监视器，以确保高可用性。
+
+
+物理存储，逻辑存储分离
+client不知道物理存储的具体结构，只知道逻辑存储的结构(placement group)
+从而物理存储具有任意的伸缩性，扩展性。
+
+CEPH的存储集群必须是能够增长（或收缩）和平衡它的动态存储对象。如果CEPH的客户端“知道”哪个CEPH的OSD守护有哪些对象，这将创建CEPH的客户端和CEPH的OSD守护程序之间的紧密耦合。相反，CRUSH算法映射每个对象到配置组，然后映射每个配置组到一个或多个CEPH的OSD守护。当新的CEPH的OSD守护和底层的OSD设备联机时，这个间接层允许CEPH的动态平衡。
+
+通过monitor获得pg map, 物理存储位置通过计算得到。
+
+当Ceph的客户端绑定到一个CEPH监视器，它会撷取群集映射最新副本。集群映射内，显示器的OSD和元数据服务器集群中的所有被客户端知道，但是，它不知道任何有关对象的位置。
+通过计算得到的对象位置
+
+客户端唯一所需要的输入的是对象ID和池。原因很简单：Ceph的数据存储在被命名的池（例如，“liverpool”）。当一个客户端想存储命名的对象（例如，“john”，“paul”，“george”，“ringo”，等等），使用对象名，一个哈希数的OSD集群和池名称计算出配置组。Ceph的客户端使用下列步骤来计算PG的ID。
+
+1.客户端输入池ID和对象ID。（例如，池=“liverpool”和对象ID =“john”） 
+2.CRUSH取得的对象ID和散列它。
+3.CRUSH计算散列模数的OSD。（例如，0x58）得到一个PG的ID。
+4.CRUSH得到池ID池的名称（如“liverpool”= 4）
+5.CRUSH预先考虑到PG ID对应池ID（例如，4.0x58）。
+
+计算对象的位置的速度远远超过非正式会话执行对象的位置查询。CRUSH算法允许客户端计算对象存储，使客户端能够联系主OSD存储或检索对象。
+
+
+
+
+群集映射
+
+Cept的使用取决于Ceph的客户和Ceph的OSD守护集群拓扑知识，“群集映射”：包括5类映射
+
+1.监控映射
+
+包含集群FSID，位置，名称地址和每个监视器的端口。这也表明现在的时期里，当创建映射时，并且它最后一被改变。要查看监控映射，执行如下命令
+
+cept mon dump
+
+2.OSD映射
+
+包含集群FSID，当创建和最后修改映射时间，池的列表，副本大小，PG数字的OSD的列表，他们的状态（例如，up，in）。要查看一个OSD映射，执行如下         命令
+
+cept osd dump
+
+3.PG映射
+
+包含PG版本，其时间戳记，最后OSD映射时代，完整的比率，如PG ID，每个配置组集，代理设置，在PG的状态（例如 active + clean）和每个池数据使用         统计数据。
+
+4.CRUSH映射
+
+包含存储设备，故障域层次结构（例如，设备，主机，机架，行，空间等），并遍历层次结构存储数据时的规则的列表。要查看CRUSH映射，执行命令：            getcrushmap –o {filename}，然后通过执行crushtool -D {comp-crushmap-filename} -O {decomp-crushmap-filename}反编译。你可以查看在文本编辑器或反编        译的映射或使用命令cat查看。
+
+5.MDS映射
+
+包含了现有的MDS映射从它创建至最后一次修改的时期。它还包含池用于存储元数据，元数据服务器的列表，以及元数据服务器中。要查看MDS映射，执行         如下命令
+
+ceph mds dump
+每个映射保持一个重复历史关于其运行状态的变化。Ceph的监视器保持集群的主副本映射，包括集群成员的状态，变化，和Ceph的存储集群的整体健康。
+
+
+
+Ceph定义的几个存储区域概念
+Pool是一个命名空间，客户端向RADOS上存储对象时需要指定一个Pool，Pool通过配置文件定义并可以指定Pool的存储OSD节点范围和PG数量。
+PG是Pool内部的概念，是对象和OSD的中间逻辑分层，对象首先会通过简单的Hash算法来得到其存储的PG，这个PG和对象是确定的。
+然后每一个PG都有一个primary OSD和几个Secondary OSD，对象会被分发都这些OSD上存储，而这个分发策略称为CRUSH—Ceph的数据均匀分布的核心。
+需要注意的是整个CRUSH以上的流程实现都是在客户端计算，因此客户端本身需要保存一份Cluster Map，而这是从Monitor处获得。
+从这里我们也可以了解到Monitor主要职责就是负责维护这份Cluster Map并保证强一致性。
+
+librados和之后提到的RADOSGW的不同在于它是直接访问RADOS，没有Http协议的负载。它支持单个单项的原子操作如同时更新数据和属性、CAS操作，同时有对象粒度的快照操作。它的实现是基于RADOS的插件API，因此，其实际上就是在Rados上运行的封装库。
+
+RadosGW位于Librados之上，它主要提供RESTful接口并且兼容S3、Swfit的接口。同时RadosGW提供了Bucket的命名空间(类似于文件夹)和账户支持，并且具备使用记录用于账单目的。相对的，它增加了Http协议的负载。
+
+LibRBD是基于Librados的块设备接口实现，主要将一个块设备映射为不同的对象来实现。通过LibRBD可以创建一个块设备(Container)，然后通过QEMU/KVM Attach到VM上。通过Container和VM的解耦使得块设备可以被绑定到不同的VM上。
+
+CephFS是基于Rados实现的PB级分布式文件系统，这里会引入一个新的组件MDS(Meta Data Server)，它主要为兼容POSIX文件系统提供元数据，如目录和文件元数据。同时，MDS会将元数据也存在RADOS(Ceph Cluster)中。元数据存储在RADOS中后，元数据本身也达到了并行化，大大加强了文件操作的速度。需要注意的是MDS并不会直接为Client提供文件数据，而只是为Client提供元数据的操作。
+
+
+3.2 映射
+Ceph的命名空间是 (Pool, Object)，每个Object都会映射到一组OSD中(由这组OSD保存这个Object)：
+(Pool, Object) → (Pool, PG) → OSD set → Disk
+Ceph中Pools的属性有：
+Object的副本数
+Placement Groups的数量
+所使用的CRUSH Ruleset
+在Ceph中，Object先映射到PG(Placement Group)，再由PG映射到OSD set。每个Pool有多个PG，每个Object通过计算hash值并取模得到它所对应的PG。PG再映射到一组OSD（OSD的个数由Pool 的副本数决定），第一个OSD是Primary，剩下的都是Replicas。
+数据映射(Data Placement)的方式决定了存储系统的性能和扩展性。(Pool, PG) → OSD set 的映射由四个因素决定：
+CRUSH算法：一种伪随机算法。
+OSD MAP：包含当前所有Pool的状态和所有OSD的状态。
+CRUSH MAP：包含当前磁盘、服务器、机架的层级结构。
+CRUSH Rules：数据映射的策略。这些策略可以灵活的设置object存放的区域。比如可以指定 pool1中所有objecst放置在机架1上，所有objects的第1个副本放置在机架1上的服务器A上，第2个副本分布在机架1上的服务器B上。 pool2中所有的object分布在机架2、3、4上，所有Object的第1个副本分布在机架2的服务器上，第2个副本分布在机架3的服 器上，第3个副本分布在机架4的服务器上。
+
+Client从Monitors中得到CRUSH MAP、OSD MAP、CRUSH Ruleset，然后使用CRUSH算法计算出Object所在的OSD set。所以Ceph不需要Name服务器，Client直接和OSD进行通信。伪代码如下所示：
+locator = object_name
+obj_hash = hash(locator)
+pg = obj_hash % num_pg
+osds_for_pg = crush(pg)  # returns a list of osds
+primary = osds_for_pg[0]
+replicas = osds_for_pg[1:]
+这种数据映射的优点是：
+把Object分成组，这降低了需要追踪和处理metadata的数量(在全局的层面上，我们不需要追踪和处理每个object的metadata和placement，只需要管理PG的metadata就可以了。PG的数量级远远低于object的数量级)。
+增加PG的数量可以均衡每个OSD的负载，提高并行度。
+分隔故障域，提高数据的可靠性。
+
+
+
