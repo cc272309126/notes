@@ -1,0 +1,83 @@
+ipstack
+
+
+http://blog.csdn.net/zhangskd/article/details/22079509
+
+http://blog.chinaunix.net/uid-24148050-id-464587.html
+
+http://blog.chinaunix.net/uid-20795129-id-469821.html
+
+
+分析数据在协议栈底层的流程:  
+    
+当网卡收到数据后，产生硬件中断，由中断处理程序（一般为网卡驱动程序所注册）从网卡内读取数据，并封装称sk_buff{}结构，然后把这些数据传递给函数netif_rx（）进行进一步的处理。   
+函数netif_rx（）根据当前接收队列的拥挤情况，选择丢弃还是接收，如果是接收，则将接收到的sk_buff{}挂到接收队列softnet_data[CPU]->input_pkt_queue上，并调用函数__cpu_raise_softirq（）激活软中断NET_RX_SOFTIRQ，相应的处理函数是net_rx_action（）。   
+在函数net_rx_action（）中根据数据包的协议类型，调用相应的处理函数。对于IP包，处理函数是ip_rcv（）。   
+函数ip_rcv（）对IP包进行了一系列必要的检查（包括检查校验和），最终调用函数ip_rcv_finish（）对数据包进行向上传输。   
+函数ip_rcv_finish（）首先调用函数ip_route_input（）获取路由，检测该包是发给本机的还是要进行转发的，如果要进行转发，则调用调用函数ip_forward（）进行转发，否则调用函数ip_local_deliver（）进一步向上传递数据包。   
+函数ip_local_deliver（）首先进行了防火墙的过滤工作，最终调用函数ip_local_deliver_finish（）向上传递数据。   
+在函数ip_local_deliver_finish（）中，会检查是否有匹配协议（如根据IP头判断我们的数据包是TCP包，则要判断是否有接收TCP包的原始套接口。当然，如果有接收所有IP包的原始套接口存在也是可以的）的原始套接口。如果有，则调用函数raw_v4_input（）进行处理。   
+在函数raw_v4_input（）中，要进一步进行匹配，这次匹配的依据有四个，依次是：协议、源地址、目的地址和接收接口。分别对每一个匹配成功的原始套接口调用函数raw_rcv（）传递一个克隆的以sk_buff{}为结构的数据包。   
+接下来的几个函数都很简单，调用顺序依次是raw_rcv（）、raw_rcv_skb（）和sock_queue_rcv_skb（）。这几个函数基本上都是简单的依次调用关系。最后调用函数sock_queue_rcv_skb（），该函数经过skb_queue_tail（）函数将数据包sk_buff{}放入了接收队列sk->receive_queue的末尾。 
+
+
+网卡概述
+ 
+(1) 网卡收包
+网线上的物理帧首先被网卡芯片获取，网卡芯片会检查物理帧的CRC，保证完整性。
+然后网卡芯片将物理帧头去掉，得到MAC包。
+网卡芯片会检查MAC包内的目的MAC地址，如果和本网卡的MAC地址不一样则丢弃(混杂模式除外)。
+之后网卡芯片将MAC帧拷贝到网卡内部的缓冲区，触发硬中断。
+网卡的驱动程序通过硬中断处理函数，构建sk_buff，把它拷贝到内存中，接下来交给内核处理。
+在这个过程中，网卡芯片对物理帧进行了MAC匹配过滤，以减小系统负荷。
+ 
+(2) 网卡发包
+网卡驱动程序将IP包添加14字节的MAC头，构成MAC包。
+MAC包中含有发送端和接收端的MAC地址，由于是驱动程序创建MAC头，所以可以随便输入地址
+进行主机伪装。
+驱动程序将MAC包拷贝到网卡芯片内部的缓冲区，接下来由网卡芯片处理。
+网卡芯片将MAC包再次封装为物理帧，添加头部同步信息和CRC校验，然后丢到网线上，就完成
+一个IP报的发送了，所有接到网线上的网卡都可以看到该物理帧。
+
+(3) 网卡数据结构
+网卡用net_device来表示，用register_netdevice()注册到系统中，注册过的网卡可以通过
+unregister_netdevice()注销掉。
+
+
+1: physical layer
+
+物理网卡收到包
+    -- CRC check
+    -- remove physical header, get the MAC package
+    -- check mac address (discard mac packge if mac address is not myself)
+    -- copy mac package into netcard memory buffer
+    -- generate interrupt
+
+2: link layer  -- driver -- package from netcard buffer to kernel memory
+
+网卡用net_device来表示，用register_netdevice()注册到系统中，注册过的网卡可以通过unregister_netdevice()注销掉。
+
+3c501网卡驱动为例
+/* 3c501.c: A 3Com 3c501 Ethernet driver for Linux. */
+drivers/net/3c501.c
+drivers/net/3c501.h
+
+el1_probe
+    el1_probe1
+        dev->open = &el_open;
+        dev->hard_start_xmit = &el_start_xmit;
+
+el_open
+    request_irq(dev->irq, &el_interrupt, 0, dev->name, dev)
+
+el_interrupt
+    el_receive -- 各种判断 直到 el_receive
+        -- dev_alloc_skb  ; alloc sk_buff /* 申请一个skb，2字节用于对齐IP */
+            -- insb(DATAPORT, skb_put(skb,pkt_len), pkt_len); /* 扩展skb的data room，并把网卡缓存的数据包拷贝到skb->data中 */  
+        -- eth_type_trans  - determine the packet's protocol ID.  PACKET_BROADCAST/PACKET_MULTICAST/IP /* 使用哪种三层协议，一般是IP协议 */  
+        -- netif_rx(skb); /* 旧的接收处理函数   目前多数网卡支持新的接口NAPI */
+    
+netif_rx()主要调用enqueue_to_backlog()进行后续处理。
+softnet_data 每个cpu都有一个softnet_data实例，用于收发数据包。  
+
+
