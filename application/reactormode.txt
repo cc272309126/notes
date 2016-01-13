@@ -1,0 +1,49 @@
+
+event mode
+
+1: multi thread/process  mode
+accept -- create  a thread/process
+
+上述多线程的服务器模型似乎完美的解决了为多个客户机提供问答服务的要求，但其实并不尽然。如果要同时响应成百上千路的连接请求，则无论多线程还是多进程都会严重占据系统资源，降低系统对外界响应效率，而线程与进程本身也更容易进入假死状态。
+很多程序员可能会考虑使用“线程池”或“连接池”。“线程池”旨在减少创建和销毁线程的频率，其维持一定合理数量的线程，并让空闲的线程重新承担新的执行任务。“连接池”维持连接的缓存池，尽量重用已有的连接、减少创建和关闭连接的频率。
+
+
+2: non block mode
+fcntl( fd, F_SETFL, O_NONBLOCK );
+
+while (1)
+    receive(fd1)
+        ...
+    receive(fd2)
+        ...
+    receive(fd3)
+        ...
+    
+在非阻塞状态下，recv() 接口在被调用后立即返回，返回值代表了不同的含义。如在本例中，
+recv() 返回值大于 0，表示接受数据完毕，返回值即是接受到的字节数；
+recv() 返回 0，表示连接已经正常断开；
+recv() 返回 -1，且 errno 等于 EAGAIN，表示 recv 操作还没执行完成；
+recv() 返回 -1，且 errno 不等于 EAGAIN，表示 recv 操作遇到系统错误 errno。
+可以看到服务器线程可以通过循环调用 recv() 接口，可以在单个线程内实现对所有连接的数据接收工作。
+
+
+
+3: 使用 select() 接口的基于事件驱动的服务器模型
+
+ FD_ZERO(int fd, fd_set* fds) 
+ FD_SET(int fd, fd_set* fds) 
+ FD_ISSET(int fd, fd_set* fds) 
+ FD_CLR(int fd, fd_set* fds) 
+ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout)
+在 select() 函数中，readfds、writefds 和 exceptfds 同时作为输入参数和输出参数。如果输入的 readfds 标记了 16 号句柄，则 select() 将检测 16 号句柄是否可读。在 select() 返回后，可以通过检查 readfds 有否标记 16 号句柄，来判断该“可读”事件是否发生。另外，用户可以设置 timeout 时间。
+
+
+主要作用是non block的改进版，改成block，但是去检测一组fd
+
+这种模型的特征在于每一个执行周期都会探测一次或一组事件，一个特定的事件会触发某个特定的响应。我们可以将这种模型归类为“事件驱动模型”。
+相比其他模型，使用 select() 的事件驱动模型只用单线程（进程）执行，占用资源少，不消耗太多 CPU，同时能够为多客户端提供服务。如果试图建立一个简单的事件驱动的服务器程序，这个模型有一定的参考价值。
+首先，select() 接口并不是实现“事件驱动”的最好选择。因为当需要探测的句柄值较大时，select() 接口本身需要消耗大量时间去轮询各个句柄。很多操作系统提供了更为高效的接口，如 linux 提供了 epoll，BSD 提供了 kqueue，Solaris 提供了 /dev/poll …。如果需要实现更高效的服务器程序，类似 epoll 这样的接口更被推荐。遗憾的是不同的操作系统特供的 epoll 接口有很大差异，所以使用类似于 epoll 的接口实现具有较好跨平台能力的服务器会比较困难。
+其次，该模型将事件探测和事件响应夹杂在一起，一旦事件响应的执行体庞大，则对整个模型是灾难性的。
+
+
+
