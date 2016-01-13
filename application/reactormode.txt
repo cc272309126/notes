@@ -46,4 +46,19 @@ recv() 返回 -1，且 errno 不等于 EAGAIN，表示 recv 操作遇到系统�
 其次，该模型将事件探测和事件响应夹杂在一起，一旦事件响应的执行体庞大，则对整个模型是灾难性的。
 
 
+4: select  + multi threads
+
+struct prodcons
+{
+        // 缓冲区相关数据结构
+        int buffer[BUFFER_SIZE]; /* 实际数据存放的数组*/
+        pthread_mutex_t lock; /* 互斥体lock 用于对缓冲区的互斥操作 */
+        int readpos, writepos; /* 读写指针*/
+        pthread_cond_t notempty; /* 缓冲区非空的条件变量 */
+        pthread_cond_t notfull; /* 缓冲区未满的条件变量 */
+};
+
+线程间怎么通信， 通过buffer通信， buffer里面不是int data, 而是function pointer.
+buffer不是数组，而是single link list
+
 
