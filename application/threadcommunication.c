@@ -31,7 +31,7 @@ void put(struct prodcons *b, int data)
         /* 写数据,并移动指针 */
         b->buffer[b->writepos] = data;
         b->writepos++;
-        if (b->writepos > = BUFFER_SIZE)
+        if (b->writepos >= BUFFER_SIZE)
         {
                 b->writepos = 0;
         }
@@ -52,7 +52,7 @@ int get(struct prodcons *b)
         /* 读数据,移动读指针*/
         data = b->buffer[b->readpos];
         b->readpos++;
-        if (b->readpos > = BUFFER_SIZE)
+        if (b->readpos >= BUFFER_SIZE)
         {
                 b->readpos = 0;
         }
@@ -64,7 +64,7 @@ int get(struct prodcons *b)
 
 /* 测试:生产者线程将1 到10000 的整数送入缓冲区,消费者线
    程从缓冲区中获取整数,两者都打印信息*/
-#define OVER ( - 1)
+#define OVER (-1)
 struct prodcons buffer;
 void *producer(void *data)
 {
@@ -106,3 +106,10 @@ int main(void)
         pthread_join(th_b, &retval);
         return 0;
 }
+
+/*
+gcc -o threadcommunication.o -c threadcommunication.c 
+gcc -o threadcommunication.elf threadcommunication.o -lpthread
+*/
+
+
