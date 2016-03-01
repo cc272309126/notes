@@ -343,6 +343,52 @@ ip_rcv
                             --struct dst_entry->neighbour->output(skb); 
                             
                             
+1: syscall 
+	从syscall到传输层的抽象层面转换（根据stream/datagram/raw转换）
+2：address family -- 抽象的地址族
+	在传输层的抽象层面，根据抽象的stream/datagram/raw等类型，进行发送数据
+3：具体的tcp/ip协议实现
+	从传输层的抽象层面转为传输层的具体层面 --> 也就是stream/datagram/raw转化为具体的tcp/udp/rawIP
+	实现具体的tcp/udp/rawIP业务，切换到ip层。
+4：net filter -- ip 层处理
 
-                            
+enum nf_inet_hooks {
+    NF_INET_PRE_ROUTING, -- 进入了IP层， 查找目的地之前  link --> ip
+    NF_INET_LOCAL_IN, -- 本地报文处理ip header之前 ip --> tcp/udp
+    NF_INET_FORWARD, -- 转发报文 --> farward 
+    NF_INET_LOCAL_OUT, -- 从传输层到ip层 tcp/udp --> ip
+    NF_INET_POST_ROUTING, -- 从ip层转发之前 ip --> link
+    NF_INET_NUMHOOKS
+};
+
+5：链路层
+link layer总体流程
+中断
+1 分配sk_buff
+2 copy mac package into sk_buff
+3 判断net layer层的协议类型，根据类型进行处理，当前基本上是IP报文
+    3.1 cpu_softnet_data 队列满，拥塞丢弃
+    3.2 入队到末尾
+    3.3 调用NAPI，产生soft interrupt NET_RX_SOFTIRQ 在net_rx_action处理
+        3.3.1 net_rx_action
+        3.3.2 根据L2报文标志 处理link layer的业务，比如vlan, bridge 
+        3.3.3 根据L3报文类型 选择对应的向上交互函数，对于IPv4报文，是ip_rcv （IPv6, pppoe）
+
+
+6: physical layer
+
+物理网卡收到包
+    -- CRC check
+    -- remove physical header, get the MAC package
+    -- check mac address (discard mac packge if mac address is not myself)
+    -- copy mac package into netcard memory buffer
+    -- generate interrupt
+
+
+7：内核报文数据结构
+struct sock
+struct socket
+sk_buff
+网卡用net_device来表示，用register_netdevice()注册到系统中，注册过的网卡可以通过unregister_netdevice()注销掉。
+
                             
