@@ -3,7 +3,7 @@ ceph
 
 OSD: object storage device
 Monitor: global ceph group state machine
-MDS: meta data storage 
+MDS: meta data server
 RADOS gateway: RESTAPI
 PG: placement group
 POOL: 
