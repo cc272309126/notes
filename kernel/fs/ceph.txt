@@ -1,5 +1,22 @@
 ceph
 
+
+OSD: object storage device
+Monitor: global ceph group state machine
+MDS: meta data storage 
+RADOS gateway: RESTAPI
+PG: placement group
+POOL: 
+
+Ceph定义的几个存储区域概念。Pool是一个命名空间，客户端向RADOS上存储对象时需要指定一个Pool，Pool通过配置文件定
+义并可以指定Pool的存储OSD节点范围和PG数量。PG是Pool内部的概念，是对象和OSD的中间逻辑分层，对
+象首先会通过简单的Hash算法来得到其存储的PG，这个PG和对象是确定的。然后每一个PG都有一个primary
+OSD和几个Secondary OSD，对象会被分发都这些OSD上存储，而这个分发策略称为CRUSH—Ceph的数据均
+匀分布的核心。需要注意的是整个CRUSH以上的流程实现都是在客户端计算，因此客户端本身需要保存一份
+Cluster Map，而这是从Monitor处获得。从这里我们也可以了解到Monitor主要职责就是负责维护这份Cluster
+Map并保证强一致性
+
+
 组成
 OSD + OSD deamon
 Monitors
